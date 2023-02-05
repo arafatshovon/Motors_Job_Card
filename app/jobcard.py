@@ -34,14 +34,14 @@ def average_mileage(mileage, day_count):
 
 class JobCard:
     def __init__(self):
-        self.sale_df = pd.read_csv("./data/sale_df_db.csv")
-        self.warranty_df = pd.read_csv("./data/warranty_df_db.csv")
-        self.avg_mileage_cluster = pd.read_csv('./cluster_data/avg_mileage_cluster.csv')
-        self.day_count_cluster = pd.read_csv('./cluster_data/day_count_cluster.csv')
-        self.mileage_cluster = pd.read_csv('./cluster_data/mileage_cluster.csv')
-        self.bike_cluster = pd.read_csv('./cluster_data/bike_code.csv')
+        self.sale_df = pd.read_csv("./app/data/sale_df_db.csv")
+        self.warranty_df = pd.read_csv("./app/data/warranty_df_db.csv")
+        self.avg_mileage_cluster = pd.read_csv('./app/cluster_data/avg_mileage_cluster.csv')
+        self.day_count_cluster = pd.read_csv('./app/cluster_data/day_count_cluster.csv')
+        self.mileage_cluster = pd.read_csv('./app/cluster_data/mileage_cluster.csv')
+        self.bike_cluster = pd.read_csv('./app/cluster_data/bike_code.csv')
         self.cleaned_warranty_df = self.get_warranty_df()
-        self.bin_data = json.load(open('./cluster_data/bin_dict.json'))
+        self.bin_data = json.load(open('./app/cluster_data/bin_dict.json'))
         self.mileage_bins = self.bin_data['mileage_bins']
         self.day_count_bins =  self.bin_data['day_count_bins']
         self.avg_mileage_bins =  self.bin_data['avg_mileage_bins']
@@ -50,13 +50,18 @@ class JobCard:
         user_data = self.sale_df[self.sale_df['chassis_no']==CHESIS_NUMBER]
         mileage = MILEAGE
         user_data = user_data.iloc[0]
+        print(user_data)
         current_date = datetime.now().strftime("%Y-%m-%d")
         day_count = count_date(current_date,user_data['invoice_date'])
         self.data_dict = {'customer_name':user_data['customer_name'],
              'product_code' : user_data['product_code'],
             'day_count': day_count,
              'mileage' : mileage,
-             'avg_mileage' : average_mileage(mileage, day_count)
+             'avg_mileage' : average_mileage(mileage, day_count),
+            'purchase_date': user_data['invoice_date'],
+            'engine_number': user_data['engine_no'],
+            'brand': user_data['product_name'],
+            'job_date' : datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
         return self.data_dict
         
