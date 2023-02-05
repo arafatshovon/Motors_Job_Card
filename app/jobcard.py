@@ -31,17 +31,30 @@ def average_mileage(mileage, day_count):
         return -1
 
 
+def replace_elements(input_list, mapping_dict):
+    return [mapping_dict.get(i, i) for i in input_list]
+
+
+def remove_duplicates(input_list):
+    seen = set()
+    result = []
+    for element in input_list:
+        if element not in seen:
+            seen.add(element)
+            result.append(element)
+    return result
+
 
 class JobCard:
-    def __init__(self):
-        self.sale_df = pd.read_csv("./app/data/sale_df_db.csv")
-        self.warranty_df = pd.read_csv("./app/data/warranty_df_db.csv")
-        self.avg_mileage_cluster = pd.read_csv('./app/cluster_data/avg_mileage_cluster.csv')
-        self.day_count_cluster = pd.read_csv('./app/cluster_data/day_count_cluster.csv')
-        self.mileage_cluster = pd.read_csv('./app/cluster_data/mileage_cluster.csv')
-        self.bike_cluster = pd.read_csv('./app/cluster_data/bike_code.csv')
+    def __init__(self, root_dir = './app/'):
+        self.sale_df = pd.read_csv(f"{root_dir}data/sale_df_db.csv")
+        self.warranty_df = pd.read_csv(f"{root_dir}data/warranty_df_db.csv")
+        self.avg_mileage_cluster = pd.read_csv(f'{root_dir}cluster_data/avg_mileage_cluster.csv')
+        self.day_count_cluster = pd.read_csv(f'{root_dir}cluster_data/day_count_cluster.csv')
+        self.mileage_cluster = pd.read_csv(f'{root_dir}cluster_data/mileage_cluster.csv')
+        self.bike_cluster = pd.read_csv(f'{root_dir}cluster_data/bike_code.csv')
         self.cleaned_warranty_df = self.get_warranty_df()
-        self.bin_data = json.load(open('./app/cluster_data/bin_dict.json'))
+        self.bin_data = json.load(open(f'{root_dir}cluster_data/bin_dict.json'))
         self.mileage_bins = self.bin_data['mileage_bins']
         self.day_count_bins =  self.bin_data['day_count_bins']
         self.avg_mileage_bins =  self.bin_data['avg_mileage_bins']

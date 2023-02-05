@@ -1,17 +1,19 @@
 from django.shortcuts import render
 from django.http import HttpResponse
 import pandas as pd
-from app.jobcard import JobCard
+from app.jobcard import JobCard, replace_elements, remove_duplicates
+from app.dictmap import mapping
 
 
 class UserDataClass:
     user_name: str
 
+
 def jobquery(request):
     CHESIS_NUMBER = request.POST['chassis']
     MILEAGE = int(request.POST['mileage'])
     JC = JobCard()
-    user_info, DATAS = JC.get_job_card(CHESIS_NUMBER, MILEAGE, N=10)
+    user_info, DATAS = JC.get_job_card(CHESIS_NUMBER, MILEAGE, N=20)
     user_data = UserDataClass()
     suggestion = UserDataClass()
     amount = UserDataClass()
@@ -23,11 +25,15 @@ def jobquery(request):
     user_data.engine_number = user_info['engine_number']
     user_data.brand = user_info['brand']
 
-    suggestion.p1 = DATAS[0][0]
-    suggestion.p2 = DATAS[0][1]
-    suggestion.p3 = DATAS[0][2]
-    suggestion.p4 = DATAS[0][3]
-    suggestion.p5 = DATAS[0][4]
+    result = DATAS[0].tolist()
+    result = replace_elements(result, mapping)
+    result = remove_duplicates(result)
+
+    suggestion.p1 = result[0]
+    suggestion.p2 = result[1]
+    suggestion.p3 = result[2]
+    suggestion.p4 = result[3]
+    suggestion.p5 = result[4]
     amount.total = 5
     amount.a1 = 25
     amount.a2 = 20
