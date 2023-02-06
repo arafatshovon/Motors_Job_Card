@@ -4,6 +4,10 @@
 
 Link : http://192.168.101.63:9000
 
+```
+username : misadmin
+password : acimisai 
+```
 
 ## Server Hosting
 

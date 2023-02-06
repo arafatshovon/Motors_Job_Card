@@ -70,7 +70,7 @@
 
     
     <!-- Custom styles for this template -->
-    <link href="form-validation.css" rel="stylesheet">
+    <link href="{% static 'form-validation.css' %}" rel="stylesheet">
   </head>
   <body class="bg-light">
     
@@ -101,8 +101,6 @@
 
 
         </ul>
-
-
 
       </div>
       <div class="col-md-7 col-lg-8">
@@ -177,9 +175,6 @@
             </div>
 
 
-
-        
-
             <div class="col-md-6">
               <label for="country" class="form-label">Bay</label>
               <select class="form-select" id="country">
@@ -220,8 +215,8 @@
 </div>
 
 
-    <script src="bootstrap.bundle.min.js"></script>
+    <script src="{% static 'bootstrap.bundle.min.js' %}"></script>
 
-      <script src="form-validation.js"></script>
+      <script src="{% static 'form-validation.js' %}"></script>
   </body>
 </html>

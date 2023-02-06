@@ -1,8 +1,6 @@
-from django.shortcuts import render
-# from django.contrib import message
+from django.shortcuts import render, redirect
+from django.contrib import messages
 from django.contrib.auth.models import User, auth
-from django.http import HttpResponse
-import pandas as pd
 from app.jobcard import JobCard, replace_elements, remove_duplicates, remove_elements
 from app.dictmap import mapping, removed_list
 
@@ -11,8 +9,15 @@ def login(request):
     if request.method == 'POST':
         username = request.POST['username']
         password = request.POST['password']
-
         user = auth.authenticate(username=username, password=password)
+        if user is not None:
+            return render(request, 'checkout.html')
+        else:
+            messages.info(request, 'Invalid Credentials')
+            return redirect('login')
+
+    else:
+        return render(request, 'login.html')
 
 
 class UserDataClass:
