@@ -1,3 +1,2 @@
-pandas
-matplotlib
-pyodbc
+pandas==1.4.1
+django==4.0.5
