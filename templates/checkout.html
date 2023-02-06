@@ -130,6 +130,14 @@
             <button class="w-100 btn btn-primary btn-lg" type="submit">Checkout</button>
                   </div>
 
+            {% if ret == False %}
+            <div class="alert alert-warning alert-dismissible fade show" role="alert">
+            <strong>Chassis Number Not Found!</strong> Please Enter a Valid Chassis Number.
+            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+            </button>
+            </div>
+            {% endif %}
 
             <div class="col-12">
               <label for="username" class="form-label">Customer Name </label>

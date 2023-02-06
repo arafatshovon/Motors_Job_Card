@@ -61,11 +61,11 @@ class JobCard:
         
     def get_info(self, CHESIS_NUMBER, MILEAGE):
         user_data = self.sale_df[self.sale_df['chassis_no']==CHESIS_NUMBER]
+        self.data_dict ={}
         if not user_data.empty:
             ret = True
             mileage = MILEAGE
             user_data = user_data.iloc[0]
-            print(user_data)
             current_date = datetime.datetime.now().strftime("%Y-%m-%d")
             day_count = count_date(current_date, user_data['invoice_date'])
             self.data_dict = {'customer_name': user_data['customer_name'],
@@ -83,7 +83,7 @@ class JobCard:
             print('======  InValid ======')
             ret = False
 
-        return self.data_dict
+        return ret, self.data_dict
         
         
     def get_warranty_df(self):
@@ -97,8 +97,7 @@ class JobCard:
         return cleaned_warranty_df
     
     def get_job_card(self, CHESIS_NUMBER, MILEAGE, N=10):
-        user_info = self.get_info(CHESIS_NUMBER, MILEAGE)
-        ret = True
+        ret, user_info = self.get_info(CHESIS_NUMBER, MILEAGE)
         if ret:
             self.cluster_mileage = pd.cut(pd.Series(self.data_dict['mileage']), bins=self.mileage_bins)
             s1 = self.mileage_cluster[self.mileage_cluster['mileage_cluster']==str(self.cluster_mileage[0])]
@@ -117,10 +116,10 @@ class JobCard:
             DATAS = []
             for i in range(N):
                 DATAS.append([all_parts_list[out_index[i]], probabilities[out_index[i]]*1000000])
-            return user_info, pd.DataFrame(DATAS)
+            return ret, user_info, pd.DataFrame(DATAS)
 
-        # else:
-        #     return ret, [], pd.DataFrame([])
+        else:
+            return ret, [], pd.DataFrame([])
 
 
             
