@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from datetime import datetime
+import datetime
 import json
 
 
@@ -17,8 +17,8 @@ def convert_float(s):
 
 
 def count_date(current, invoice):
-    d1 = datetime.strptime(invoice, "%Y-%m-%d")
-    d2 = datetime.strptime(current, "%Y-%m-%d")
+    d1 = datetime.datetime.strptime(invoice, "%Y-%m-%d")
+    d2 = datetime.datetime.strptime(current, "%Y-%m-%d")
 
     delta = d2 - d1
     return delta.days
@@ -61,21 +61,28 @@ class JobCard:
         
     def get_info(self, CHESIS_NUMBER, MILEAGE):
         user_data = self.sale_df[self.sale_df['chassis_no']==CHESIS_NUMBER]
-        mileage = MILEAGE
-        user_data = user_data.iloc[0]
-        print(user_data)
-        current_date = datetime.now().strftime("%Y-%m-%d")
-        day_count = count_date(current_date,user_data['invoice_date'])
-        self.data_dict = {'customer_name':user_data['customer_name'],
-             'product_code' : user_data['product_code'],
-            'day_count': day_count,
-             'mileage' : mileage,
-             'avg_mileage' : average_mileage(mileage, day_count),
-            'purchase_date': user_data['invoice_date'],
-            'engine_number': user_data['engine_no'],
-            'brand': user_data['product_name'],
-            'job_date' : datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
+        if not user_data.empty:
+            ret = True
+            mileage = MILEAGE
+            user_data = user_data.iloc[0]
+            print(user_data)
+            current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+            day_count = count_date(current_date, user_data['invoice_date'])
+            self.data_dict = {'customer_name': user_data['customer_name'],
+                              'product_code': user_data['product_code'],
+                              'day_count': day_count,
+                              'mileage': mileage,
+                              'avg_mileage': average_mileage(mileage, day_count),
+                              'purchase_date': user_data['invoice_date'],
+                              'engine_number': user_data['engine_no'],
+                              'brand': user_data['product_name'],
+                              'job_date': (datetime.datetime.now() + datetime.timedelta(hours=6)).strftime(
+                                  "%Y-%m-%d %H:%M:%S")
+                              }
+        else:
+            print('======  InValid ======')
+            ret = False
+
         return self.data_dict
         
         
@@ -91,32 +98,31 @@ class JobCard:
     
     def get_job_card(self, CHESIS_NUMBER, MILEAGE, N=10):
         user_info = self.get_info(CHESIS_NUMBER, MILEAGE)
-        self.cluster_mileage = pd.cut(pd.Series(self.data_dict['mileage']), bins=self.mileage_bins)
-        s1 = self.mileage_cluster[self.mileage_cluster['mileage_cluster']==str(self.cluster_mileage[0])]
-        cluster_day_count = pd.cut(pd.Series(self.data_dict['day_count']), bins=self.day_count_bins)
+        ret = True
+        if ret:
+            self.cluster_mileage = pd.cut(pd.Series(self.data_dict['mileage']), bins=self.mileage_bins)
+            s1 = self.mileage_cluster[self.mileage_cluster['mileage_cluster']==str(self.cluster_mileage[0])]
+            cluster_day_count = pd.cut(pd.Series(self.data_dict['day_count']), bins=self.day_count_bins)
+            s2 = self.day_count_cluster[self.day_count_cluster['day_count_cluster']==str(cluster_day_count[0])]
+            cluster_avg_mileage = pd.cut(pd.Series(self.data_dict['avg_mileage']), bins=self.avg_mileage_bins)
+            s3 = self.avg_mileage_cluster[self.avg_mileage_cluster['avg_mileage_cluster']==str(cluster_avg_mileage[0])]
+            s4 = self.bike_cluster[self.bike_cluster['bike_code'] == self.data_dict['product_code']]
+            p1 = s1.iloc[0,1:].values
+            p2 = s2.iloc[0,1:].values
+            p3 = s3.iloc[0,1:].values
+            p4 = s4.iloc[0,1:].values
+            probabilities = list(np.multiply(np.multiply(p1,p2),np.multiply(p3,p4)))
+            out_index = sorted(range(len(probabilities)), key=lambda k: -probabilities[k])
+            all_parts_list = list(s1.iloc[0,1:].index)
+            DATAS = []
+            for i in range(N):
+                DATAS.append([all_parts_list[out_index[i]], probabilities[out_index[i]]*1000000])
+            return user_info, pd.DataFrame(DATAS)
 
-        s2 = self.day_count_cluster[self.day_count_cluster['day_count_cluster']==str(cluster_day_count[0])]
-        
-        cluster_avg_mileage = pd.cut(pd.Series(self.data_dict['avg_mileage']), bins=self.avg_mileage_bins)
-        s3 = self.avg_mileage_cluster[self.avg_mileage_cluster['avg_mileage_cluster']==str(cluster_avg_mileage[0])]
-        
-        s4 = self.bike_cluster[self.bike_cluster['bike_code'] == self.data_dict['product_code']]
+        # else:
+        #     return ret, [], pd.DataFrame([])
 
-        p1 = s1.iloc[0,1:].values
-        p2 = s2.iloc[0,1:].values
-        p3 = s3.iloc[0,1:].values
-        p4 = s4.iloc[0,1:].values
-        
-#         p4= np.multiply(s4.iloc[0,1:].values,s4.iloc[0,1:].values)
-        probabilities = list(np.multiply(np.multiply(p1,p2),np.multiply(p3,p4)))
-        out_index = sorted(range(len(probabilities)), key=lambda k: -probabilities[k])
-        all_parts_list = list(s1.iloc[0,1:].index)
-        
-        DATAS = []
-        for i in range(N):
-            DATAS.append([all_parts_list[out_index[i]], probabilities[out_index[i]]*1000000])
-#             print(all_parts_list[out_index[i]], probabilities[out_index[i]]*1000000)
-        return user_info, pd.DataFrame(DATAS)
+
             
     def visualize(self):
         plt.figure(figsize=(10,3))
