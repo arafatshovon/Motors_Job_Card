@@ -1,8 +1,18 @@
 from django.shortcuts import render
+# from django.contrib import message
+from django.contrib.auth.models import User, auth
 from django.http import HttpResponse
 import pandas as pd
 from app.jobcard import JobCard, replace_elements, remove_duplicates, remove_elements
 from app.dictmap import mapping, removed_list
+
+
+def login(request):
+    if request.method == 'POST':
+        username = request.POST['username']
+        password = request.POST['password']
+
+        user = auth.authenticate(username=username, password=password)
 
 
 class UserDataClass:
