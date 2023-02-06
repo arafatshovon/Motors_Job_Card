@@ -1,8 +1,8 @@
 from django.shortcuts import render
 from django.http import HttpResponse
 import pandas as pd
-from app.jobcard import JobCard, replace_elements, remove_duplicates
-from app.dictmap import mapping
+from app.jobcard import JobCard, replace_elements, remove_duplicates, remove_elements
+from app.dictmap import mapping, removed_list
 
 
 class UserDataClass:
@@ -28,8 +28,9 @@ def jobquery(request):
         result = DATAS[0].tolist()
         result = replace_elements(result, mapping)
         result = remove_duplicates(result)
+        result = remove_elements(result, removed_list)
 
-        if len(result)>5:
+        if len(result) > 5:
             suggestion_list = result[:5]
         else:
             suggestion_list = result

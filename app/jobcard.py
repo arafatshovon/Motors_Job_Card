@@ -31,6 +31,10 @@ def average_mileage(mileage, day_count):
         return -1
 
 
+def remove_elements(input_list, elements_to_remove):
+    return [element for element in input_list if element not in elements_to_remove]
+
+
 def replace_elements(input_list, mapping_dict):
     return [mapping_dict.get(i, i) for i in input_list]
 
