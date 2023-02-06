@@ -76,7 +76,8 @@
   <form method="post">
     {% csrf_token %}
     <img class="mb-4" src="{% static 'aci_logo.png' %}" alt="" width="72" height="72">
-    <h1 class="h3 mb-3 fw-normal">Please sign in</h1>
+    <h1 class="h2 mb-3 fw-normal">Motors Job card</h1>
+    <h3 class="h5 mb-3 fw-normal">User Log in</h3>
 
     <div class="form-floating">
       <input type="text" class="form-control" id="username" placeholder="username" name="username">
@@ -90,9 +91,13 @@
     <button class="w-100 btn btn-lg btn-primary" type="submit">Sign in</button>
     <p class="mt-5 mb-3 text-muted"></p>
   </form>
+
+ <footer class="my-5 pt-5 text-muted text-center text-small">
+    <p class="mb-1">&copy; ACI MIS</p>
+
+  </footer>
+
 </main>
-
-
     
   </body>
 </html>
