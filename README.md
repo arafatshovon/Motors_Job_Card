@@ -19,8 +19,14 @@ Pass : 987654321
 
 ### Open a Screen and Host
 ```
-screen -S ScreenName
+screen -S jobcard [Create Screen]
+screen -r jobcard [Read Screen]
 cd Motors-Job-Card
 source venv/bin/activate
 python manage.py runserver 0.0.0.0:9000
+```
+### API
+
+```
+http://192.168.101.63:9000/checkout_api?chassis=RG642003173&mileage=4000
 ```
