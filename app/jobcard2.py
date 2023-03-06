@@ -1,6 +1,4 @@
 ## Version 2.0
-import datetime
-import json
 import pandas as pd
 import numpy as np
 import datetime
@@ -145,7 +143,7 @@ class JobCard:
             suggestions = get_suggestion(out_1, out_2, input_mileage, max_num_suggestion)
 
             DATAS = []
-            for i in range(N):
+            for i in range(min(N, len(suggestions))):
                 DATAS.append([suggestions[i], suggestions[i]])
             return ret, user_info, pd.DataFrame(DATAS)
 
