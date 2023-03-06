@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.contrib.auth.models import User, auth
-from app.jobcard import JobCard, replace_elements, remove_duplicates, remove_elements
+from app.jobcard2 import JobCard, replace_elements, remove_duplicates, remove_elements
 from app.dictmap import mapping, removed_list
 from django.http import JsonResponse
 

@@ -2,6 +2,37 @@ import pandas as pd
 import pyodbc
 import sys
 
+
+bin_dict = {"mileage_bins": [0, 5, 100, 500, 1500, 3000, 4500, 6000, 9000, 15000, 50000, 100000000],
+             "day_count_bins": [-500, 31, 84, 131, 182, 230, 276, 325, 377, 496, 19960, 100000000],
+             "avg_mileage_bins": [-1, 8, 14, 18, 21, 25, 28, 31, 36, 43, 296260, 100000000]}
+
+
+def convert_int(string):
+    digits = ""
+    for char in string:
+        if char.isdigit():
+            digits += char
+    return int(digits)
+
+
+def convert_df_mileage(df, bin_dict):
+    mileage_int = []
+    mileage_list = list(df['mileage'])
+    for i in range(len(mileage_list)):
+        try:
+            mileage_int.append(int(mileage_list[i]))
+        except:
+            mileage_int.append(-1)
+
+    if len(mileage_int) == len(df):
+        df['mileage'] = mileage_int
+
+    df['mileage_cluster'] = pd.cut(df['mileage'], bins=bin_dict['mileage_bins']).astype('object')
+
+    return df
+
+
 def connect_to_db():
     odbc_driver = '{ODBC Driver 17 for SQL Server}'
     native_driver = '{SQL Server Native Client 11.0}'
@@ -66,6 +97,9 @@ def get_warranty_data_from_db():
     ]
     warranty_df = pd.DataFrame(rows, columns=column_names)
     warranty_df.to_csv("./data/warranty_df_db.csv", index=None)
+    converted_df = convert_df_mileage(warranty_df, bin_dict)
+    converted_df.dropna(inplace=True)
+    converted_df.to_csv("./data/warranty_converted_df_db.csv", index=None)
     print('warranty data saved')
     return warranty_df
 
