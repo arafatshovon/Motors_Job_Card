@@ -32,7 +32,7 @@ def get_suggestion(out_1, out_2, mileage, max_num_suggestion):
         out_2 = remove_forbidden(out_2)
     output_list = []
     waiting_list = list(out_2)
-    output_list += list(out_1)[:3]
+    output_list += list(out_1)[:5]
     for p in waiting_list:
         if len(output_list) >= max_num_suggestion:
             break
