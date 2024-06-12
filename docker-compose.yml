@@ -1,0 +1,12 @@
+services:
+  motors_job_card:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: "motors-job-card"
+    command: "python manage.py runserver 0.0.0.0:9001"
+    volumes:
+      - .:/app
+    ports:
+      - "9001:9001"
+    restart: always
