@@ -49,64 +49,71 @@ def jobquery_api(request):
 
 
 def jobquery(request, method='GET'):
-    if method == 'POST':
-        CHESIS_NUMBER = request.POST['chassis']
-        MILEAGE = int(request.POST['mileage'])
-    else:
-        CHESIS_NUMBER = request.GET['chassis']
-        MILEAGE = int(request.GET['mileage'])
+    ret = False
+    user_data_dict = {}
 
-    JC = JobCard()
-    ret, user_info, DATAS = JC.get_job_card(CHESIS_NUMBER, MILEAGE, N=10)
-    if ret:
-        user_data = UserDataClass()
-        user_data_dict = {}
-        amount = UserDataClass()
-        suggestion_list = []
-        user_data_dict['customer_name'] = user_info['customer_name']
-        user_data_dict['chassis'] = CHESIS_NUMBER
-        user_data_dict['mileage'] = MILEAGE
-        user_data_dict['purchase_date'] = user_info['purchase_date']
-        user_data_dict['job_date'] = user_info['job_date']
-        user_data_dict['engine_number'] = user_info['engine_number']
-        user_data_dict['brand'] = user_info['brand']
-
-        user_data.customer_name = user_info['customer_name']
-        user_data.chassis_number = CHESIS_NUMBER
-        user_data.mileage = MILEAGE
-        user_data.purchase_date = user_info['purchase_date']
-        user_data.job_date = user_info['job_date']
-        user_data.engine_number = user_info['engine_number']
-        user_data.brand = user_info['brand']
-
-        if DATAS.empty:
-            suggestion_list = ["No suggestions found"]
+    try:
+        if method == 'POST':
+            CHESIS_NUMBER = request.POST['chassis']
+            MILEAGE = int(request.POST['mileage'])
         else:
-            result = DATAS[0].tolist()
-            result = replace_elements(result, mapping)
-            result = remove_duplicates(result)
-            result = remove_elements(result, removed_list)
+            CHESIS_NUMBER = request.GET['chassis']
+            MILEAGE = int(request.GET['mileage'])
 
-            if len(result) > 5:
-                suggestion_list = result[:5]
+        JC = JobCard()
+
+        ret, user_info, DATAS = JC.get_job_card(CHESIS_NUMBER, MILEAGE, N=10)
+        if ret:
+            user_data = UserDataClass()
+            amount = UserDataClass()
+            suggestion_list = []
+            user_data_dict['customer_name'] = user_info['customer_name']
+            user_data_dict['chassis'] = CHESIS_NUMBER
+            user_data_dict['mileage'] = MILEAGE
+            user_data_dict['purchase_date'] = user_info['purchase_date']
+            user_data_dict['job_date'] = user_info['job_date']
+            user_data_dict['engine_number'] = user_info['engine_number']
+            user_data_dict['brand'] = user_info['brand']
+
+            user_data.customer_name = user_info['customer_name']
+            user_data.chassis_number = CHESIS_NUMBER
+            user_data.mileage = MILEAGE
+            user_data.purchase_date = user_info['purchase_date']
+            user_data.job_date = user_info['job_date']
+            user_data.engine_number = user_info['engine_number']
+            user_data.brand = user_info['brand']
+
+            if DATAS.empty:
+                suggestion_list = ["No suggestions found"]
             else:
-                suggestion_list = result
+                result = DATAS[0].tolist()
+                result = replace_elements(result, mapping)
+                result = remove_duplicates(result)
+                result = remove_elements(result, removed_list)
 
-        amount.total = len(suggestion_list)
-        amount.a1 = 25
-        amount.a2 = 20
-        amount.a3 = 15
-        amount.a4 = 8
-        amount.a5 = 5
+                if len(result) > 5:
+                    suggestion_list = result[:5]
+                else:
+                    suggestion_list = result
 
-    else:
-        user_data_dict = {}
-        user_data = UserDataClass()
-        suggestion = UserDataClass()
-        amount = UserDataClass()
-        suggestion_list = []
-        user_data.chassis_number = CHESIS_NUMBER
-        user_data.mileage = MILEAGE
+            amount.total = len(suggestion_list)
+            amount.a1 = 25
+            amount.a2 = 20
+            amount.a3 = 15
+            amount.a4 = 8
+            amount.a5 = 5
+
+        else:
+            user_data = UserDataClass()
+            suggestion = UserDataClass()
+            amount = UserDataClass()
+            suggestion_list = []
+            user_data.chassis_number = CHESIS_NUMBER
+            user_data.mileage = MILEAGE
+    except Exception as e:
+        print("============= Handled Exception =============")
+        print(e)
+        suggestion_list = ["Failed to generate suggestions"]
 
     return {'ret': ret, 'user_data_dict': user_data_dict, 'suggestion_list': suggestion_list}
 
