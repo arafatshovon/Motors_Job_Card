@@ -78,15 +78,19 @@ def jobquery(request, method='GET'):
         user_data.job_date = user_info['job_date']
         user_data.engine_number = user_info['engine_number']
         user_data.brand = user_info['brand']
-        result = DATAS[0].tolist()
-        result = replace_elements(result, mapping)
-        result = remove_duplicates(result)
-        result = remove_elements(result, removed_list)
 
-        if len(result) > 5:
-            suggestion_list = result[:5]
+        if DATAS.empty:
+            suggestion_list = ["No suggestions found"]
         else:
-            suggestion_list = result
+            result = DATAS[0].tolist()
+            result = replace_elements(result, mapping)
+            result = remove_duplicates(result)
+            result = remove_elements(result, removed_list)
+
+            if len(result) > 5:
+                suggestion_list = result[:5]
+            else:
+                suggestion_list = result
 
         amount.total = len(suggestion_list)
         amount.a1 = 25
