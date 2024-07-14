@@ -52,10 +52,12 @@ def connect_to_db():
     )
     return connection
 
+
 connection = connect_to_db()
 
 
-def _load_warranty_data_from_db(cursor: pyodbc.Cursor):
+def _get_warranty_df_from_db():
+    cursor = connection.cursor()
     cursor.execute(
         "SELECT UC.RegionName, 'Warranty Claim' ServiceType,    DWC.DCWarrantyId, "
         "Convert(Varchar(10),DWC.WCDate,120) AS WCDate, "
@@ -82,10 +84,32 @@ def _load_warranty_data_from_db(cursor: pyodbc.Cursor):
         "WHERE Status = 1")
     
     data = cursor.fetchall()
+    rows = []
+    for customer in data:
+        row = []
+        for item in customer:
+            row.append(item)
+        rows.append(row)
 
-    return data
+    column_names = [
+        'region', 'service_type', 'dc_warranty_id', 'warranty_date', 'occurrence_date', 'master_code',
+        'dealer_name',
+        'customer_name', 'bike_code', 'bike_model', 'chassis_no', 'inv_date', 'mileage', 'problem',
+        'part_code', 'product_name', 'total_cost'
+    ]
 
-def _load_sales_data_from_db(cursor: pyodbc.Cursor):
+    warranty_df = pd.DataFrame(rows, columns=column_names)
+
+    return warranty_df
+
+def get_converted_warranty_df_from_db():
+    warranty_df = _get_warranty_df_from_db()
+    converted_df = convert_df_mileage(warranty_df, bin_dict)
+    converted_df.dropna(inplace=True)
+    return converted_df
+
+def get_sales_df_from_db():
+    cursor = connection.cursor()
     cursor.execute("Select T1.InvoiceID, T1.InvoiceDate, T1.InvoiceNo, C.CustomerCode AS DealerCode, "
                    "C.CustomerName AS DealerName, (C.Add1 + ' ' + C.Add2) DealerAddress, "
                    "T1.MasterCode, T1.CustomerCode, T1.CustomerName, T1.OccupationId, "
@@ -107,48 +131,8 @@ def _load_sales_data_from_db(cursor: pyodbc.Cursor):
                    "'C113','C114','C122','C087','C088','C110','C111','C108','C109','C130','C132')"
                    "ORDER BY T1.InvoiceDate DESC")
     data = cursor.fetchall()
-
-    return data
-
-
-def _get_warranty_df_from_db():    
-    cursor = connection.cursor()
-    warranty_data = _load_warranty_data_from_db(cursor)
-    cursor.close()
-
     rows = []
-    for customer in warranty_data:
-        row = []
-        for item in customer:
-            row.append(item)
-        rows.append(row)
-
-    column_names = [
-        'region', 'service_type', 'dc_warranty_id', 'warranty_date', 'occurrence_date', 'master_code',
-        'dealer_name',
-        'customer_name', 'bike_code', 'bike_model', 'chassis_no', 'inv_date', 'mileage', 'problem',
-        'part_code', 'product_name', 'total_cost'
-    ]
-
-    warranty_df = pd.DataFrame(rows, columns=column_names)
-
-    return warranty_df
-
-
-def _get_converted_warranty_df_from_db():
-    warranty_df = _get_warranty_df_from_db()
-    converted_df = convert_df_mileage(warranty_df, bin_dict)
-    converted_df.dropna(inplace=True)
-    return converted_df
-
-
-def _get_sales_df_from_db():
-    cursor = connection.cursor()
-    sales_data = _load_sales_data_from_db(cursor)
-    cursor.close()
-
-    rows = []
-    for customer in sales_data:
+    for customer in data:
         row = []
         for item in customer:
             row.append(item)
@@ -159,15 +143,3 @@ def _get_sales_df_from_db():
                     'unit_price', 'chassis_no', 'engine_no', 'color', 'pack_size', 'model', 'region_name']
     sale_df = pd.DataFrame(rows, columns=column_names)
     return sale_df
-
-
-_converted_warranty_df = _get_converted_warranty_df_from_db()
-
-_sales_df = _get_sales_df_from_db()
-
-
-def get_converted_warranty_df_from_db():
-    return _converted_warranty_df
-
-def get_sales_df_from_db():
-    return _sales_df
