@@ -111,14 +111,11 @@ def _load_sales_data_from_db(cursor: pyodbc.Cursor):
     return data
 
 
-cursor = connection.cursor()
-warranty_data = _load_warranty_data_from_db(cursor)
+def _get_warranty_df_from_db():    
+    cursor = connection.cursor()
+    warranty_data = _load_warranty_data_from_db(cursor)
+    cursor.close()
 
-cursor = connection.cursor()
-sales_data = _load_sales_data_from_db(cursor)
-
-
-def _get_warranty_data_frame_from_db():    
     rows = []
     for customer in warranty_data:
         row = []
@@ -138,14 +135,18 @@ def _get_warranty_data_frame_from_db():
     return warranty_df
 
 
-def get_converted_warranty_data_from_db():
-    warranty_df = _get_warranty_data_frame_from_db()
+def _get_converted_warranty_df_from_db():
+    warranty_df = _get_warranty_df_from_db()
     converted_df = convert_df_mileage(warranty_df, bin_dict)
     converted_df.dropna(inplace=True)
     return converted_df
 
 
-def get_sale_data_from_db():
+def _get_sales_df_from_db():
+    cursor = connection.cursor()
+    sales_data = _load_sales_data_from_db(cursor)
+    cursor.close()
+
     rows = []
     for customer in sales_data:
         row = []
@@ -159,3 +160,14 @@ def get_sale_data_from_db():
     sale_df = pd.DataFrame(rows, columns=column_names)
     return sale_df
 
+
+_converted_warranty_df = _get_converted_warranty_df_from_db()
+
+_sales_df = _get_sales_df_from_db()
+
+
+def get_converted_warranty_df_from_db():
+    return _converted_warranty_df
+
+def get_sales_df_from_db():
+    return _sales_df

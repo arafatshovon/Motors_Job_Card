@@ -6,7 +6,7 @@ import json
 import re
 from collections import Counter
 from app.dictmap import mapping, removed_list
-from app.db_to_csv import get_sale_data_from_db, get_converted_warranty_data_from_db
+from app.db_management import get_sales_df_from_db, get_converted_warranty_df_from_db
 
 
 def rename_tank_side(output):
@@ -87,8 +87,8 @@ def remove_duplicates(input_list):
 
 class JobCard:
     def __init__(self, root_dir = './app/'):
-        self.sale_df = get_sale_data_from_db()
-        self.warranty_df = get_converted_warranty_data_from_db()
+        self.sale_df = get_sales_df_from_db()
+        self.warranty_df = get_converted_warranty_df_from_db()
         self.cleaned_warranty_df = self.get_warranty_df()
         self.bin_dict = json.load(open(f'{root_dir}cluster_data/bin_dict.json'))
         self.mileage_bins = self.bin_dict['mileage_bins']
