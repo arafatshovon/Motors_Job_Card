@@ -1,7 +1,7 @@
 asgiref==3.8.1
 backports.zoneinfo==0.2.1
 Django==4.0.5
-numpy==1.24.4
+numpy
 pandas==2.0.3
 pyodbc==5.1.0
 python-dateutil==2.9.0.post0
