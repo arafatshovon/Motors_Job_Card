@@ -53,7 +53,7 @@ def connect_to_db():
     return connection
 
 
-def get_warranty_data_from_db():
+def _get_warranty_data_from_db():
     connection = connect_to_db()
     cursor = connection.cursor()
     cursor.execute(
@@ -95,14 +95,16 @@ def get_warranty_data_from_db():
         'customer_name', 'bike_code', 'bike_model', 'chassis_no', 'inv_date', 'mileage', 'problem',
         'part_code', 'product_name', 'total_cost'
     ]
+
     warranty_df = pd.DataFrame(rows, columns=column_names)
-    warranty_df.to_csv("./data/warranty_df_db.csv", index=None)
-    converted_df = convert_df_mileage(warranty_df, bin_dict)
-    converted_df.dropna(inplace=True)
-    converted_df.to_csv("./data/warranty_converted_df_db.csv", index=None)
-    print('warranty data saved')
+
     return warranty_df
 
+def get_converted_warranty_data_from_db():
+    warranty_df = _get_warranty_data_from_db()
+    converted_df = convert_df_mileage(warranty_df, bin_dict)
+    converted_df.dropna(inplace=True)
+    return converted_df
 
 def get_sale_data_from_db():
     connection = connect_to_db()
@@ -139,11 +141,5 @@ def get_sale_data_from_db():
                     'invoice_diff_in_days', 'date_of_birth', 'age_in_days', 'product_code', 'product_name',
                     'unit_price', 'chassis_no', 'engine_no', 'color', 'pack_size', 'model', 'region_name']
     sale_df = pd.DataFrame(rows, columns=column_names)
-    sale_df.to_csv("./data/sale_df_db.csv", index=None)
-    print('sale data saved')
     return sale_df
-
-
-warranty_df = get_warranty_data_from_db()
-sale_df = get_sale_data_from_db()
 

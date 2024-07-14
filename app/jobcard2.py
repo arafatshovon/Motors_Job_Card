@@ -6,6 +6,7 @@ import json
 import re
 from collections import Counter
 from app.dictmap import mapping, removed_list
+from app.db_to_csv import get_sale_data_from_db, get_converted_warranty_data_from_db
 
 
 def rename_tank_side(output):
@@ -53,7 +54,7 @@ def convert_float(s):
 
 
 def count_date(current, invoice):
-    d1 = datetime.datetime.strptime(invoice, "%Y-%m-%d")
+    d1 = datetime.datetime.strptime(pd.Timestamp(invoice).strftime("%Y-%m-%d"), "%Y-%m-%d")
     d2 = datetime.datetime.strptime(current, "%Y-%m-%d")
     delta = d2 - d1
     return delta.days
@@ -86,8 +87,8 @@ def remove_duplicates(input_list):
 
 class JobCard:
     def __init__(self, root_dir = './app/'):
-        self.sale_df = pd.read_csv(f"{root_dir}data/sale_df_db.csv")
-        self.warranty_df = pd.read_csv(f"{root_dir}data/warranty_converted_df_db.csv")
+        self.sale_df = get_sale_data_from_db()
+        self.warranty_df = get_converted_warranty_data_from_db()
         self.cleaned_warranty_df = self.get_warranty_df()
         self.bin_dict = json.load(open(f'{root_dir}cluster_data/bin_dict.json'))
         self.mileage_bins = self.bin_dict['mileage_bins']
@@ -156,7 +157,7 @@ class JobCard:
 
     def get_prediction_all(self, df, input_mileage):
         input_mileage_cluster = pd.cut(pd.Series(input_mileage), bins=self.bin_dict['mileage_bins'])
-        out_df = df[df['mileage_cluster'] == str(input_mileage_cluster[0])]
+        out_df = df[df['mileage_cluster'] == input_mileage_cluster[0]]
         return list(out_df['product_name'])
 
     def get_parts_from_mileage(self, df, input_mileage):
