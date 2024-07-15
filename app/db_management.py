@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from threading import Thread
 import time
 import pytz
+from traceback import format_exc
 
 bin_dict = {"mileage_bins": [0, 5, 100, 500, 1500, 3000, 4500, 6000, 9000, 15000, 50000, 100000000],
              "day_count_bins": [-500, 31, 84, 131, 182, 230, 276, 325, 377, 496, 19960, 100000000],
@@ -169,11 +170,18 @@ class DBManager:
         return self.sales_df
 
     def load_and_prepare_data_from_db(self):
-        self._load_warranty_data()
-        self._load_sales_data()
+        try:
+            self._load_warranty_data()
+            self._load_sales_data()
 
-        self._convert_warranty_df()
-        self._convert_sales_df()
+            self._convert_warranty_df()
+            self._convert_sales_df()
+
+            print("********** Data Loaded **********")
+        except Exception as e:
+            print(f"Failed to load data from db: {e}")
+            print("============ Handled Exception ============")
+            print(format_exc())
 
     # def increment_var(self):
     #     self.x += 1
