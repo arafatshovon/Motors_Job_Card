@@ -84,7 +84,7 @@ def jobquery(request, method='GET'):
             user_data.brand = user_info['brand']
 
             if DATAS.empty:
-                suggestion_list = ["No suggestions found"]
+                suggestion_list = []
             else:
                 result = DATAS[0].tolist()
                 result = replace_elements(result, mapping)
@@ -113,7 +113,7 @@ def jobquery(request, method='GET'):
     except Exception as e:
         print("============= Handled Exception =============")
         print(e)
-        suggestion_list = ["Failed to generate suggestions"]
+        suggestion_list = []
 
     return {'ret': ret, 'user_data_dict': user_data_dict, 'suggestion_list': suggestion_list}
 

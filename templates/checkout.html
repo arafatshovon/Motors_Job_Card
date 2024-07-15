@@ -130,11 +130,7 @@
 
             {% if ret == False %}
               <div class="alert alert-warning alert-dismissible fade show" role="alert">
-                {% if suggestion_list %}
-                  <strong>Failed to generate suggestions</strong> Please provide valid input.
-                {% else %}
-                  <strong>Chassis Number Not Found!</strong> Please Enter a Valid Chassis Number.
-                {% endif %}
+                <strong>Chassis Number Not Found!</strong> Please Enter a Valid Chassis Number.
                 <button type="button" class="close" data-dismiss="alert" aria-label="Close">
                 <span aria-hidden="true">&times;</span>
                 </button>
