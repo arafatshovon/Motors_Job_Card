@@ -2,7 +2,10 @@ import pandas as pd
 import pyodbc
 import sys
 from typing import List
-
+from datetime import datetime, timedelta
+from threading import Thread
+import time
+import pytz
 
 bin_dict = {"mileage_bins": [0, 5, 100, 500, 1500, 3000, 4500, 6000, 9000, 15000, 50000, 100000000],
              "day_count_bins": [-500, 31, 84, 131, 182, 230, 276, 325, 377, 496, 19960, 100000000],
@@ -35,6 +38,8 @@ def convert_df_mileage(df, bin_dict):
 
 
 class DBManager:
+    x = 0
+
     def __init__(self, server: str = "192.168.100.25", port: int = 1433, database: str = "MotorMC", force_driver = None):
         self.connection = self._connect_to_db(server, port, database, force_driver)
         self.load_and_prepare_data_from_db()
@@ -170,5 +175,32 @@ class DBManager:
         self._convert_warranty_df()
         self._convert_sales_df()
 
+    # def increment_var(self):
+    #     self.x += 1
+    #     print("Var Value: ", self.x)
+
 
 db_manager = DBManager()
+
+bst = pytz.timezone('Asia/Dhaka')
+
+def job():
+    # db_manager.increment_var()
+    db_manager.load_and_prepare_data_from_db()
+    print(f"Data loaded and prepared at {datetime.now(bst)}")
+
+def get_seconds_until_midnight():
+    now = datetime.now(bst)
+    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return (midnight - now).seconds
+
+def db_scheduler():
+    while True:
+        seconds_until_midnight = get_seconds_until_midnight()
+        time.sleep(seconds_until_midnight)
+        job()
+        time.sleep(120)
+
+
+t = Thread(target=db_scheduler, daemon=True)
+t.start()
