@@ -66,6 +66,9 @@ class DBManager:
             UID=sa;
             PWD=dataport;"""
         )
+
+        print("********** DB Connected **********")
+
         return connection
 
     def _load_warranty_data(self) -> List[pyodbc.Row]:
