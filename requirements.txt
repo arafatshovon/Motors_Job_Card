@@ -1,6 +1,5 @@
 asgiref
-# backports.zoneinfo
-Django==4.0.5
+Django
 numpy
 pandas
 pyodbc
@@ -9,4 +8,3 @@ pytz
 six
 sqlparse
 typing-extensions
-tzdata

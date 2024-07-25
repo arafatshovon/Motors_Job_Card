@@ -4,20 +4,20 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: "motors-job-card"
-    command: "python manage.py runserver 0.0.0.0:9001"
-    volumes:
-      - .:/app
+    command: "python manage.py runserver 0.0.0.0:${PORT:-9001}"
+    # volumes:
+    #   - .:/app
     ports:
-      - "9001:9001"
+      - "${PORT:-9001}:${PORT:-9001}"
     restart: always
-    deploy:
-      resources:
-        limits:
-          cpus: '0.10'
-          memory: 250M
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9001"]
-      interval: 2m30s
-      timeout: 30s
-      retries: 5
-      start_period: 30s
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '0.10'
+    #       memory: 250M
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:9001"]
+    #   interval: 2m30s
+    #   timeout: 30s
+    #   retries: 5
+    #   start_period: 30s
