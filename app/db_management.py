@@ -8,6 +8,9 @@ import time
 import pytz
 from traceback import format_exc
 
+class DataRetrievalError(Exception):
+    pass
+
 bin_dict = {"mileage_bins": [0, 5, 100, 500, 1500, 3000, 4500, 6000, 9000, 15000, 50000, 100000000],
              "day_count_bins": [-500, 31, 84, 131, 182, 230, 276, 325, 377, 496, 19960, 100000000],
              "avg_mileage_bins": [-1, 8, 14, 18, 21, 25, 28, 31, 36, 43, 296260, 100000000]}
@@ -42,6 +45,11 @@ class DBManager:
     x = 0
 
     def __init__(self, server: str = "192.168.100.25", port: int = 1433, database: str = "MotorMC", force_driver = None):
+        self._server = server
+        self._port = port
+        self._database = database
+        self._force_driver = force_driver
+
         self.connection = self._connect_to_db(server, port, database, force_driver)
         self.load_and_prepare_data_from_db()
         
@@ -70,9 +78,17 @@ class DBManager:
         print("********** DB Connected **********")
 
         return connection
+    
+    def _reconnect_to_db(self):
+        if self.connection:
+            self.connection.close()
 
-    def _load_warranty_data(self) -> List[pyodbc.Row]:
+        self.connection = self._connect_to_db(self._server, self._port, self._database, self._force_driver)
+
+    def _load_warranty_data(self):
         cursor = self.connection.cursor()
+
+        print("============== Running Query For Warranty Data ===============")
 
         cursor.execute(
             "SELECT UC.RegionName, 'Warranty Claim' ServiceType,    DWC.DCWarrantyId, "
@@ -99,35 +115,40 @@ class DBManager:
             "ON DWC.DCWarrantyId = P.DCWarrantyId "
             "WHERE Status = 1")
         
-        self._warranty_data = cursor.fetchall()
-        cursor.close()
+        print("============== Query Completed For Warranty Data ===============")
         
-    def _load_sales_data(self) -> List[pyodbc.Row]:
+        self._warranty_data = cursor.fetchall()
+
+        print("============== Warranty Data Loaded ===============")
+
+        cursor.close()
+
+    def _get_sales_data_of_chassis(self, chassis: str) -> pyodbc.Row:
         cursor = self.connection.cursor()
 
-        cursor.execute("Select T1.InvoiceID, T1.InvoiceDate, T1.InvoiceNo, C.CustomerCode AS DealerCode, "
-                    "C.CustomerName AS DealerName, (C.Add1 + ' ' + C.Add2) DealerAddress, "
-                    "T1.MasterCode, T1.CustomerCode, T1.CustomerName, T1.OccupationId, "
-                    "ISNULL(DATEDIFF(day, T1.InvoiceDate, GetDate()), '100') InvoiceDiffInDays, "
-                    "ISNULL(T1.DateOfBirth, '1900-01-01') DateOfBirth1, "
-                    "ISNULL(DATEDIFF(day, T1.DateOfBirth, GetDate()), '36500') AgeInDays, "
-                    "T2.ProductCode, T2.ProductName, T2.UnitPrice, T2.ChassisNo, "
-                    "T2.EngineNo, T2.Color, T3.PackSize, T3.Model, T4.RegionName "
-                    "From DealarInvoiceMaster T1 "
-                    "Inner Join DealarInvoiceDetails T2 ON T1.InvoiceID = T2.InvoiceID "
-                    "Inner Join Product T3 ON T2.ProductCode = T3.ProductCode "
-                    "Left Join UserCustomer T4 ON T1.MasterCode = T4.CustomerCode "
-                    "LEFT JOIN Customer C ON T1.MasterCode = C.CustomerCode "
-                    "WHERE T2.ProductCode in ("
-                    "'C015','C032','C033','C034','C035','C036','C048','C059','C078','C079','C083','C084','C085',"
-                    "'C095','C096','C097','C098','C099','C115','C116','C117','C125', "
-                    "'C127','C128','C129','C136','C068','C069','C070','C086','C100','C101','C102','C112','C002',"
-                    "'C004','C006','C028','C037','C038','C039','C041','C089','C090', "
-                    "'C113','C114','C122','C087','C088','C110','C111','C108','C109','C130','C132')"
-                    "ORDER BY T1.InvoiceDate DESC")
-        
-        self._sales_data = cursor.fetchall()
+        cursor.execute(f"""
+                            Select T1.InvoiceID, T1.InvoiceDate, T1.InvoiceNo, C.CustomerCode AS DealerCode, 
+                            C.CustomerName AS DealerName, (C.Add1 + ' ' + C.Add2) DealerAddress, 
+                            T1.MasterCode, T1.CustomerCode, T1.CustomerName, T1.OccupationId, 
+                            ISNULL(DATEDIFF(day, T1.InvoiceDate, GetDate()), '100') InvoiceDiffInDays, 
+                            ISNULL(T1.DateOfBirth, '1900-01-01') DateOfBirth1, 
+                            ISNULL(DATEDIFF(day, T1.DateOfBirth, GetDate()), '36500') AgeInDays, 
+                            T2.ProductCode, T2.ProductName, T2.UnitPrice, T2.ChassisNo, 
+                            T2.EngineNo, T2.Color, T3.PackSize, T3.Model, T4.RegionName 
+                            From DealarInvoiceMaster T1 
+                            Inner Join DealarInvoiceDetails T2 ON T1.InvoiceID = T2.InvoiceID 
+                            Inner Join Product T3 ON T2.ProductCode = T3.ProductCode 
+                            Left Join UserCustomer T4 ON T1.MasterCode = T4.CustomerCode 
+                            LEFT JOIN Customer C ON T1.MasterCode = C.CustomerCode 
+                            WHERE T2.ChassisNo = '{chassis}';
+                       """)
+    
+
+        data = cursor.fetchone()
         cursor.close()
+
+        return data
+        
 
     def __get_warranty_df_from_db(self) -> pd.DataFrame: 
         rows = []
@@ -148,37 +169,42 @@ class DBManager:
 
         return warranty_df
     
-    def _convert_warranty_df(self):
+    def _convert_warranty_data_to_df(self):
         warranty_df = self.__get_warranty_df_from_db()
         self.converted_warranty_df = convert_df_mileage(warranty_df, bin_dict)
         self.converted_warranty_df.dropna(inplace=True)
 
-    def _convert_sales_df(self):
-        rows = []
-        for customer in self._sales_data:
+    def _convert_sales_data_to_df(self, sales_data: pyodbc.Row):
+        if sales_data:
             row = []
-            for item in customer:
+            for item in sales_data:
                 row.append(item)
-            rows.append(row)
-        column_names = ['invoice_id', 'invoice_date', 'invoice_no', 'dealer_code', 'dealer_name',
-                        'dealer_address', 'master_code', 'customer_code', 'customer_name', 'occupation_id',
-                        'invoice_diff_in_days', 'date_of_birth', 'age_in_days', 'product_code', 'product_name',
-                        'unit_price', 'chassis_no', 'engine_no', 'color', 'pack_size', 'model', 'region_name']
-        self.sales_df = pd.DataFrame(rows, columns=column_names)
+
+            column_names = ['invoice_id', 'invoice_date', 'invoice_no', 'dealer_code', 'dealer_name',
+                            'dealer_address', 'master_code', 'customer_code', 'customer_name', 'occupation_id',
+                            'invoice_diff_in_days', 'date_of_birth', 'age_in_days', 'product_code', 'product_name',
+                            'unit_price', 'chassis_no', 'engine_no', 'color', 'pack_size', 'model', 'region_name']
+            
+            return pd.DataFrame([row], columns=column_names)
+        else:
+            return pd.DataFrame()
 
     def get_converted_warranty_df(self) -> pd.DataFrame:
         return self.converted_warranty_df
     
-    def get_sales_df(self) -> pd.DataFrame:
-        return self.sales_df
+    def get_sales_df_for_chassis(self, chassis: str) -> pd.DataFrame:
+        try:
+            sales_data = self._get_sales_data_of_chassis(chassis)
+            df = self._convert_sales_data_to_df(sales_data)
+            return df
+        except Exception as e:
+            print(f"Sales data fetch errro: {e.__class__.__name__} | {e}")
+            raise DataRetrievalError("Failed to retrieve data")
 
     def load_and_prepare_data_from_db(self):
         try:
             self._load_warranty_data()
-            self._load_sales_data()
-
-            self._convert_warranty_df()
-            self._convert_sales_df()
+            self._convert_warranty_data_to_df()
 
             print("********** Data Loaded **********")
         except Exception as e:

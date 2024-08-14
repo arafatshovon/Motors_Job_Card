@@ -30,6 +30,7 @@ def jobquery_web(request):
     user_data_dict = dict_response['user_data_dict']
     suggestion_list = dict_response['suggestion_list']
     ret = dict_response['ret']
+    error_msg = dict_response['error']
     user_data = UserDataClass()
     if ret:
         user_data.customer_name = user_data_dict['customer_name']
@@ -40,7 +41,7 @@ def jobquery_web(request):
         user_data.engine_number = user_data_dict['engine_number']
         user_data.brand = user_data_dict['brand']
 
-    return render(request, 'checkout.html', {'ret': ret, 'user_data': user_data, 'suggestion_list': suggestion_list})
+    return render(request, 'checkout.html', {'ret': ret, 'user_data': user_data, 'suggestion_list': suggestion_list, 'error': error_msg})
 
 
 def jobquery_api(request):
@@ -51,6 +52,7 @@ def jobquery_api(request):
 def jobquery(request, method='GET'):
     ret = False
     user_data_dict = {}
+    error_msg = None
 
     try:
         if method == 'POST':
@@ -112,10 +114,11 @@ def jobquery(request, method='GET'):
             user_data.mileage = MILEAGE
     except Exception as e:
         print("============= Handled Exception =============")
-        print(e)
+        error_msg = f"{e.__class__.__name__}: {e}"
+        print(error_msg)
         suggestion_list = []
 
-    return {'ret': ret, 'user_data_dict': user_data_dict, 'suggestion_list': suggestion_list}
+    return {'ret': ret, 'user_data_dict': user_data_dict, 'suggestion_list': suggestion_list, 'error': error_msg }
 
 
 def home(request):
