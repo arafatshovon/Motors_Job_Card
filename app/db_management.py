@@ -8,6 +8,9 @@ import time
 import pytz
 from traceback import format_exc
 
+class DataRetrievalError(Exception):
+    pass
+
 bin_dict = {"mileage_bins": [0, 5, 100, 500, 1500, 3000, 4500, 6000, 9000, 15000, 50000, 100000000],
              "day_count_bins": [-500, 31, 84, 131, 182, 230, 276, 325, 377, 496, 19960, 100000000],
              "avg_mileage_bins": [-1, 8, 14, 18, 21, 25, 28, 31, 36, 43, 296260, 100000000]}
@@ -120,10 +123,8 @@ class DBManager:
 
         cursor.close()
 
-    def __get_offset_cursor(self, offset: int) -> pyodbc.Cursor:
+    def _get_sales_data_of_chassis(self, chassis: str) -> pyodbc.Row:
         cursor = self.connection.cursor()
-
-        print("============== Running Query For Sales Data ===============")
 
         cursor.execute(f"""
                             Select T1.InvoiceID, T1.InvoiceDate, T1.InvoiceNo, C.CustomerCode AS DealerCode, 
@@ -139,61 +140,15 @@ class DBManager:
                             Inner Join Product T3 ON T2.ProductCode = T3.ProductCode 
                             Left Join UserCustomer T4 ON T1.MasterCode = T4.CustomerCode 
                             LEFT JOIN Customer C ON T1.MasterCode = C.CustomerCode 
-                            ORDER BY T1.InvoiceDate DESC
-                            OFFSET {offset} ROWS;
+                            WHERE T2.ChassisNo = '{chassis}';
                        """)
+    
+
+        data = cursor.fetchone()
+        cursor.close()
+
+        return data
         
-        print("============== Query Completed For Sales Data ===============")
-
-        return cursor
-        
-        
-    def _load_sales_data(self):
-        self._sales_data: List[pyodbc.Row] = []
-
-        batch_size = 5000
-        batches_processed = 0
-        start_time = time.time()
-
-        cursor = self.__get_offset_cursor(batches_processed * batch_size)
-
-        max_connection_retries = 3
-
-        while True:
-            try:
-                rows = cursor.fetchmany(batch_size)
-
-                if not rows:
-                    break
-                
-                self._sales_data.extend(rows)
-
-                batches_processed += 1
-
-                print(f"======== Batches Processed: {batches_processed} ========")
-            except:
-                print("Reconnecting to db ...")
-                time.sleep(2)
-                cursor.close()
-
-                connection_retries = 0
-
-                while connection_retries < max_connection_retries:
-                    time.sleep(2)
-                    try:
-                        self._reconnect_to_db()
-                        cursor = self.__get_offset_cursor(batches_processed * batch_size)
-                        print("New cursor set")
-                        break
-                    except:
-                        print("Retrying db connection ...")
-                        connection_retries += 1
-
-
-        elapsed_time = time.time() - start_time
-        print(f"Time takes to load sales data: {elapsed_time}s")
-
-        print("============== Sales Data Loaded ===============")
 
     def __get_warranty_df_from_db(self) -> pd.DataFrame: 
         rows = []
@@ -214,37 +169,42 @@ class DBManager:
 
         return warranty_df
     
-    def _convert_warranty_df(self):
+    def _convert_warranty_data_to_df(self):
         warranty_df = self.__get_warranty_df_from_db()
         self.converted_warranty_df = convert_df_mileage(warranty_df, bin_dict)
         self.converted_warranty_df.dropna(inplace=True)
 
-    def _convert_sales_df(self):
-        rows = []
-        for customer in self._sales_data:
+    def _convert_sales_data_to_df(self, sales_data: pyodbc.Row):
+        if sales_data:
             row = []
-            for item in customer:
+            for item in sales_data:
                 row.append(item)
-            rows.append(row)
-        column_names = ['invoice_id', 'invoice_date', 'invoice_no', 'dealer_code', 'dealer_name',
-                        'dealer_address', 'master_code', 'customer_code', 'customer_name', 'occupation_id',
-                        'invoice_diff_in_days', 'date_of_birth', 'age_in_days', 'product_code', 'product_name',
-                        'unit_price', 'chassis_no', 'engine_no', 'color', 'pack_size', 'model', 'region_name']
-        self.sales_df = pd.DataFrame(rows, columns=column_names)
+
+            column_names = ['invoice_id', 'invoice_date', 'invoice_no', 'dealer_code', 'dealer_name',
+                            'dealer_address', 'master_code', 'customer_code', 'customer_name', 'occupation_id',
+                            'invoice_diff_in_days', 'date_of_birth', 'age_in_days', 'product_code', 'product_name',
+                            'unit_price', 'chassis_no', 'engine_no', 'color', 'pack_size', 'model', 'region_name']
+            
+            return pd.DataFrame([row], columns=column_names)
+        else:
+            return pd.DataFrame()
 
     def get_converted_warranty_df(self) -> pd.DataFrame:
         return self.converted_warranty_df
     
-    def get_sales_df(self) -> pd.DataFrame:
-        return self.sales_df
+    def get_sales_df_for_chassis(self, chassis: str) -> pd.DataFrame:
+        try:
+            sales_data = self._get_sales_data_of_chassis(chassis)
+            df = self._convert_sales_data_to_df(sales_data)
+            return df
+        except Exception as e:
+            print(f"Sales data fetch errro: {e.__class__.__name__} | {e}")
+            raise DataRetrievalError("Failed to retrieve data")
 
     def load_and_prepare_data_from_db(self):
         try:
             self._load_warranty_data()
-            self._load_sales_data()
-
-            self._convert_warranty_df()
-            self._convert_sales_df()
+            self._convert_warranty_data_to_df()
 
             print("********** Data Loaded **********")
         except Exception as e:

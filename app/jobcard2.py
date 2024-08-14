@@ -87,14 +87,13 @@ def remove_duplicates(input_list):
 
 class JobCard:
     def __init__(self, root_dir = './app/'):
-        self.sale_df = db_manager.get_sales_df()
         self.warranty_df = db_manager.get_converted_warranty_df()
         self.cleaned_warranty_df = self.get_warranty_df()
         self.bin_dict = json.load(open(f'{root_dir}cluster_data/bin_dict.json'))
         self.mileage_bins = self.bin_dict['mileage_bins']
         
     def get_info(self, CHESIS_NUMBER, MILEAGE):
-        user_data = self.sale_df[self.sale_df['chassis_no'] == CHESIS_NUMBER]
+        user_data = db_manager.get_sales_df_for_chassis(CHESIS_NUMBER)
         self.data_dict = {}
         if not user_data.empty:
             ret = True
