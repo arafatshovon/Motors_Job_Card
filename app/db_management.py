@@ -42,6 +42,11 @@ class DBManager:
     x = 0
 
     def __init__(self, server: str = "192.168.100.25", port: int = 1433, database: str = "MotorMC", force_driver = None):
+        self._server = server
+        self._port = port
+        self._database = database
+        self._force_driver = force_driver
+
         self.connection = self._connect_to_db(server, port, database, force_driver)
         self.load_and_prepare_data_from_db()
         
@@ -70,9 +75,17 @@ class DBManager:
         print("********** DB Connected **********")
 
         return connection
+    
+    def _reconnect_to_db(self):
+        if self.connection:
+            self.connection.close()
 
-    def _load_warranty_data(self) -> List[pyodbc.Row]:
+        self.connection = self._connect_to_db(self._server, self._port, self._database, self._force_driver)
+
+    def _load_warranty_data(self):
         cursor = self.connection.cursor()
+
+        print("============== Running Query For Warranty Data ===============")
 
         cursor.execute(
             "SELECT UC.RegionName, 'Warranty Claim' ServiceType,    DWC.DCWarrantyId, "
@@ -99,35 +112,88 @@ class DBManager:
             "ON DWC.DCWarrantyId = P.DCWarrantyId "
             "WHERE Status = 1")
         
-        self._warranty_data = cursor.fetchall()
-        cursor.close()
+        print("============== Query Completed For Warranty Data ===============")
         
-    def _load_sales_data(self) -> List[pyodbc.Row]:
+        self._warranty_data = cursor.fetchall()
+
+        print("============== Warranty Data Loaded ===============")
+
+        cursor.close()
+
+    def __get_offset_cursor(self, offset: int) -> pyodbc.Cursor:
         cursor = self.connection.cursor()
 
-        cursor.execute("Select T1.InvoiceID, T1.InvoiceDate, T1.InvoiceNo, C.CustomerCode AS DealerCode, "
-                    "C.CustomerName AS DealerName, (C.Add1 + ' ' + C.Add2) DealerAddress, "
-                    "T1.MasterCode, T1.CustomerCode, T1.CustomerName, T1.OccupationId, "
-                    "ISNULL(DATEDIFF(day, T1.InvoiceDate, GetDate()), '100') InvoiceDiffInDays, "
-                    "ISNULL(T1.DateOfBirth, '1900-01-01') DateOfBirth1, "
-                    "ISNULL(DATEDIFF(day, T1.DateOfBirth, GetDate()), '36500') AgeInDays, "
-                    "T2.ProductCode, T2.ProductName, T2.UnitPrice, T2.ChassisNo, "
-                    "T2.EngineNo, T2.Color, T3.PackSize, T3.Model, T4.RegionName "
-                    "From DealarInvoiceMaster T1 "
-                    "Inner Join DealarInvoiceDetails T2 ON T1.InvoiceID = T2.InvoiceID "
-                    "Inner Join Product T3 ON T2.ProductCode = T3.ProductCode "
-                    "Left Join UserCustomer T4 ON T1.MasterCode = T4.CustomerCode "
-                    "LEFT JOIN Customer C ON T1.MasterCode = C.CustomerCode "
-                    "WHERE T2.ProductCode in ("
-                    "'C015','C032','C033','C034','C035','C036','C048','C059','C078','C079','C083','C084','C085',"
-                    "'C095','C096','C097','C098','C099','C115','C116','C117','C125', "
-                    "'C127','C128','C129','C136','C068','C069','C070','C086','C100','C101','C102','C112','C002',"
-                    "'C004','C006','C028','C037','C038','C039','C041','C089','C090', "
-                    "'C113','C114','C122','C087','C088','C110','C111','C108','C109','C130','C132')"
-                    "ORDER BY T1.InvoiceDate DESC")
+        print("============== Running Query For Sales Data ===============")
+
+        cursor.execute(f"""
+                            Select T1.InvoiceID, T1.InvoiceDate, T1.InvoiceNo, C.CustomerCode AS DealerCode, 
+                            C.CustomerName AS DealerName, (C.Add1 + ' ' + C.Add2) DealerAddress, 
+                            T1.MasterCode, T1.CustomerCode, T1.CustomerName, T1.OccupationId, 
+                            ISNULL(DATEDIFF(day, T1.InvoiceDate, GetDate()), '100') InvoiceDiffInDays, 
+                            ISNULL(T1.DateOfBirth, '1900-01-01') DateOfBirth1, 
+                            ISNULL(DATEDIFF(day, T1.DateOfBirth, GetDate()), '36500') AgeInDays, 
+                            T2.ProductCode, T2.ProductName, T2.UnitPrice, T2.ChassisNo, 
+                            T2.EngineNo, T2.Color, T3.PackSize, T3.Model, T4.RegionName 
+                            From DealarInvoiceMaster T1 
+                            Inner Join DealarInvoiceDetails T2 ON T1.InvoiceID = T2.InvoiceID 
+                            Inner Join Product T3 ON T2.ProductCode = T3.ProductCode 
+                            Left Join UserCustomer T4 ON T1.MasterCode = T4.CustomerCode 
+                            LEFT JOIN Customer C ON T1.MasterCode = C.CustomerCode 
+                            ORDER BY T1.InvoiceDate DESC
+                            OFFSET {offset} ROWS;
+                       """)
         
-        self._sales_data = cursor.fetchall()
-        cursor.close()
+        print("============== Query Completed For Sales Data ===============")
+
+        return cursor
+        
+        
+    def _load_sales_data(self):
+        self._sales_data: List[pyodbc.Row] = []
+
+        batch_size = 5000
+        batches_processed = 0
+        start_time = time.time()
+
+        cursor = self.__get_offset_cursor(batches_processed * batch_size)
+
+        max_connection_retries = 3
+
+        while True:
+            try:
+                rows = cursor.fetchmany(batch_size)
+
+                if not rows:
+                    break
+                
+                self._sales_data.extend(rows)
+
+                batches_processed += 1
+
+                print(f"======== Batches Processed: {batches_processed} ========")
+            except:
+                print("Reconnecting to db ...")
+                time.sleep(2)
+                cursor.close()
+
+                connection_retries = 0
+
+                while connection_retries < max_connection_retries:
+                    time.sleep(2)
+                    try:
+                        self._reconnect_to_db()
+                        cursor = self.__get_offset_cursor(batches_processed * batch_size)
+                        print("New cursor set")
+                        break
+                    except:
+                        print("Retrying db connection ...")
+                        connection_retries += 1
+
+
+        elapsed_time = time.time() - start_time
+        print(f"Time takes to load sales data: {elapsed_time}s")
+
+        print("============== Sales Data Loaded ===============")
 
     def __get_warranty_df_from_db(self) -> pd.DataFrame: 
         rows = []
