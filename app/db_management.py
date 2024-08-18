@@ -86,68 +86,118 @@ class DBManager:
         self.connection = self._connect_to_db(self._server, self._port, self._database, self._force_driver)
 
     def _load_warranty_data(self):
-        cursor = self.connection.cursor()
+        max_retries = 3
+        retries = 0
+        success = False
 
-        print("============== Running Query For Warranty Data ===============")
+        cursor = None
 
-        cursor.execute(
-            "SELECT UC.RegionName, 'Warranty Claim' ServiceType,    DWC.DCWarrantyId, "
-            "Convert(Varchar(10),DWC.WCDate,120) AS WCDate, "
-            "Convert(Varchar(10),DWC.OccuranceDate,120) AS OccuranceDate, "
-            "DWC.MasterCode, C.CustomerName AS DealarName, "
-            "DIM.CustomerName, BP.ProductCode AS BikeCode, BP.ProductName AS BikeName, DWC.ChassisNo, "
-            "Convert(Varchar(10),DIM.InvoiceDate,120) AS InvoiceDate, "
-            "DWC.Mileage, DWC.ProblemDetails AS ProblemDetails, "
-            "P.ProductCode AS ProductCode, "
-            "P.ProductName AS ProductName, "
-            "P.UnitPrice + P.ServiceCharge AS TotalCost "
-            "FROM DealarWarrantyClaim DWC "
-            "LEFT JOIN UserCustomer UC ON DWC.MasterCode = UC.CustomerCode AND UserType = 'SE' "
-            "LEFT JOIN Customer C ON DWC.MasterCode = C.CustomerCode "
-            "INNER JOIN DealarInvoiceDetails DID ON DWC.ChassisNo = DID.ChassisNo "
-            "INNER JOIN Product BP ON DID.ProductCode = BP.ProductCode "
-            "INNER JOIN DealarInvoiceMaster DIM ON DIM.InvoiceId = DID.InvoiceId "
-            "LEFT JOIN (SELECT DCWarrantyId, ISNULL(P.PartNo, OP.SMSCode) ProductCode,ISNULL(P.ProductName, "
-            "OP.ProductName) ProductName,(D.UnitPrice * Quantity) UnitPrice,ServiceCharge "
-            "FROM DealarWarrantyClaimProduct D "
-            "LEFT JOIN Product P  ON D.ProductCode = P.ProductCode "
-            "LEFT JOIN OtherProduct OP ON D.ProductCode = CONVERT(VARCHAR, OP.ProductCode)) P "
-            "ON DWC.DCWarrantyId = P.DCWarrantyId "
-            "WHERE Status = 1")
-        
-        print("============== Query Completed For Warranty Data ===============")
-        
-        self._warranty_data = cursor.fetchall()
+        while not success and retries < max_retries:
+            try:
+                cursor = self.connection.cursor()
 
-        print("============== Warranty Data Loaded ===============")
+                print("============== Running Query For Warranty Data ===============")
 
-        cursor.close()
+                cursor.execute(
+                    "SELECT UC.RegionName, 'Warranty Claim' ServiceType,    DWC.DCWarrantyId, "
+                    "Convert(Varchar(10),DWC.WCDate,120) AS WCDate, "
+                    "Convert(Varchar(10),DWC.OccuranceDate,120) AS OccuranceDate, "
+                    "DWC.MasterCode, C.CustomerName AS DealarName, "
+                    "DIM.CustomerName, BP.ProductCode AS BikeCode, BP.ProductName AS BikeName, DWC.ChassisNo, "
+                    "Convert(Varchar(10),DIM.InvoiceDate,120) AS InvoiceDate, "
+                    "DWC.Mileage, DWC.ProblemDetails AS ProblemDetails, "
+                    "P.ProductCode AS ProductCode, "
+                    "P.ProductName AS ProductName, "
+                    "P.UnitPrice + P.ServiceCharge AS TotalCost "
+                    "FROM DealarWarrantyClaim DWC "
+                    "LEFT JOIN UserCustomer UC ON DWC.MasterCode = UC.CustomerCode AND UserType = 'SE' "
+                    "LEFT JOIN Customer C ON DWC.MasterCode = C.CustomerCode "
+                    "INNER JOIN DealarInvoiceDetails DID ON DWC.ChassisNo = DID.ChassisNo "
+                    "INNER JOIN Product BP ON DID.ProductCode = BP.ProductCode "
+                    "INNER JOIN DealarInvoiceMaster DIM ON DIM.InvoiceId = DID.InvoiceId "
+                    "LEFT JOIN (SELECT DCWarrantyId, ISNULL(P.PartNo, OP.SMSCode) ProductCode,ISNULL(P.ProductName, "
+                    "OP.ProductName) ProductName,(D.UnitPrice * Quantity) UnitPrice,ServiceCharge "
+                    "FROM DealarWarrantyClaimProduct D "
+                    "LEFT JOIN Product P  ON D.ProductCode = P.ProductCode "
+                    "LEFT JOIN OtherProduct OP ON D.ProductCode = CONVERT(VARCHAR, OP.ProductCode)) P "
+                    "ON DWC.DCWarrantyId = P.DCWarrantyId "
+                    "WHERE Status = 1")
+                
+                print("============== Query Completed For Warranty Data ===============")
+                
+                self._warranty_data = cursor.fetchall()
+
+                print("============== Warranty Data Loaded ===============")
+
+                cursor.close()
+                cursor = None
+                
+                success = True
+            except Exception as e:
+                if cursor:
+                    cursor.close()
+
+                print(f"******* {retries + 1}. Failed to fetch warranty data: {e.__class__.__name__} | {e}")
+
+                time.sleep(1)
+                self._reconnect_to_db()
+                retries += 1
+
+                print("Retrying...")
+
+        if not success:
+            raise Exception("******* FAILED TO FETCH WARRANTY DATA EVEN AFTER RETRYING *******")
 
     def _get_sales_data_of_chassis(self, chassis: str) -> pyodbc.Row:
-        cursor = self.connection.cursor()
+        max_retries = 3
+        retries = 0
+        success = False
 
-        cursor.execute(f"""
-                            Select T1.InvoiceID, T1.InvoiceDate, T1.InvoiceNo, C.CustomerCode AS DealerCode, 
-                            C.CustomerName AS DealerName, (C.Add1 + ' ' + C.Add2) DealerAddress, 
-                            T1.MasterCode, T1.CustomerCode, T1.CustomerName, T1.OccupationId, 
-                            ISNULL(DATEDIFF(day, T1.InvoiceDate, GetDate()), '100') InvoiceDiffInDays, 
-                            ISNULL(T1.DateOfBirth, '1900-01-01') DateOfBirth1, 
-                            ISNULL(DATEDIFF(day, T1.DateOfBirth, GetDate()), '36500') AgeInDays, 
-                            T2.ProductCode, T2.ProductName, T2.UnitPrice, T2.ChassisNo, 
-                            T2.EngineNo, T2.Color, T3.PackSize, T3.Model, T4.RegionName 
-                            From DealarInvoiceMaster T1 
-                            Inner Join DealarInvoiceDetails T2 ON T1.InvoiceID = T2.InvoiceID 
-                            Inner Join Product T3 ON T2.ProductCode = T3.ProductCode 
-                            Left Join UserCustomer T4 ON T1.MasterCode = T4.CustomerCode 
-                            LEFT JOIN Customer C ON T1.MasterCode = C.CustomerCode 
-                            WHERE T2.ChassisNo = '{chassis}';
-                       """)
-    
+        cursor = None
 
-        data = cursor.fetchone()
-        cursor.close()
+        while not success and retries < max_retries:
+            try:
+                cursor = self.connection.cursor()
 
-        return data
+                cursor.execute(f"""
+                                    Select T1.InvoiceID, T1.InvoiceDate, T1.InvoiceNo, C.CustomerCode AS DealerCode, 
+                                    C.CustomerName AS DealerName, (C.Add1 + ' ' + C.Add2) DealerAddress, 
+                                    T1.MasterCode, T1.CustomerCode, T1.CustomerName, T1.OccupationId, 
+                                    ISNULL(DATEDIFF(day, T1.InvoiceDate, GetDate()), '100') InvoiceDiffInDays, 
+                                    ISNULL(T1.DateOfBirth, '1900-01-01') DateOfBirth1, 
+                                    ISNULL(DATEDIFF(day, T1.DateOfBirth, GetDate()), '36500') AgeInDays, 
+                                    T2.ProductCode, T2.ProductName, T2.UnitPrice, T2.ChassisNo, 
+                                    T2.EngineNo, T2.Color, T3.PackSize, T3.Model, T4.RegionName 
+                                    From DealarInvoiceMaster T1 
+                                    Inner Join DealarInvoiceDetails T2 ON T1.InvoiceID = T2.InvoiceID 
+                                    Inner Join Product T3 ON T2.ProductCode = T3.ProductCode 
+                                    Left Join UserCustomer T4 ON T1.MasterCode = T4.CustomerCode 
+                                    LEFT JOIN Customer C ON T1.MasterCode = C.CustomerCode 
+                                    WHERE T2.ChassisNo = '{chassis}';
+                            """)
+            
+
+                data = cursor.fetchone()
+                cursor.close()
+                cursor = None
+
+                success = True
+            except Exception as e:
+                if cursor:
+                    cursor.close()
+
+                print(f"******* {retries + 1}. Failed to fetch sales data: {e.__class__.__name__} | {e}")
+
+                time.sleep(1)
+                self._reconnect_to_db()
+                retries += 1
+
+                print("Retrying...")
+
+        if success:
+            return data
+        else:
+            raise Exception("******* FAILED TO FETCH SALES DATA EVEN AFTER RETRYING *******")
         
 
     def __get_warranty_df_from_db(self) -> pd.DataFrame: 
@@ -198,7 +248,7 @@ class DBManager:
             df = self._convert_sales_data_to_df(sales_data)
             return df
         except Exception as e:
-            print(f"Sales data fetch errro: {e.__class__.__name__} | {e}")
+            print(f"Sales data fetch error: {e.__class__.__name__} | {e}")
             raise DataRetrievalError("Failed to retrieve data")
 
     def load_and_prepare_data_from_db(self):
