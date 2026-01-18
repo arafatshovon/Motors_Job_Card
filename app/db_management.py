@@ -556,6 +556,110 @@ class DBManager:
 
         raise DataRetrievalError("FAILED TO FETCH TOP WARRANTY PARTS FOR BIKE MODEL EVEN AFTER RETRYING")
 
+    def search_bike_names(
+        self,
+        query: str,
+        limit: int = 20,
+        offset: int = 0,
+        min_len: int = 2,
+    ) -> dict:
+        """
+        Live query to SQL Server: search distinct bike names from Product.ProductName.
+
+        Args:
+          query: user text (matched with LIKE %query%)
+          limit: page size (1..200)
+          offset: pagination offset (>=0)
+          min_len: minimum query length to avoid full table scans
+
+        Output:
+          {
+            'items': [{'bikeName': '...'}, ...],
+            'totalRows': 1234,
+            'limit': 20,
+            'offset': 0,
+            'query': '...'
+          }
+        """
+        q = "" if query is None else str(query).strip()
+        if len(q) < int(min_len):
+            raise ValueError(f"Query too short. Provide at least {int(min_len)} characters.")
+
+        try:
+            limit_int = int(limit)
+        except Exception:
+            limit_int = 20
+        limit_int = max(1, min(limit_int, 200))
+
+        try:
+            offset_int = int(offset)
+        except Exception:
+            offset_int = 0
+        offset_int = max(0, offset_int)
+
+        # Escape LIKE wildcards so user input behaves like "contains" search.
+        # We'll use ESCAPE '\' in SQL.
+        q_escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{q_escaped}%"
+
+        sql = """
+            DECLARE @limit INT = ?;
+            DECLARE @offset INT = ?;
+            DECLARE @pattern NVARCHAR(400) = ?;
+
+            WITH Names AS (
+                SELECT DISTINCT
+                    LTRIM(RTRIM(ProductName)) AS BikeName
+                FROM Product
+                WHERE ProductName IS NOT NULL
+                  AND LTRIM(RTRIM(ProductName)) <> ''
+                  AND ProductName LIKE @pattern ESCAPE '\\'
+            )
+            SELECT
+                BikeName,
+                COUNT(*) OVER () AS TotalRows
+            FROM Names
+            ORDER BY BikeName ASC
+            OFFSET @offset ROWS
+            FETCH NEXT @limit ROWS ONLY;
+        """
+
+        max_retries = 3
+        retries = 0
+        cursor = None
+
+        while retries < max_retries:
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(sql, (limit_int, offset_int, pattern))
+                rows = cursor.fetchall()
+                cursor.close()
+                cursor = None
+
+                items: List[dict] = []
+                total_rows = 0
+                for r in rows:
+                    items.append({"bikeName": None if r[0] is None else str(r[0])})
+                    total_rows = int(r[1] or 0)
+
+                return {
+                    "items": items,
+                    "totalRows": total_rows,
+                    "limit": limit_int,
+                    "offset": offset_int,
+                    "query": q,
+                }
+            except Exception as e:
+                if cursor:
+                    cursor.close()
+                    cursor = None
+                print(f"******* {retries + 1}. Failed to search bike names: {e.__class__.__name__} | {e}")
+                time.sleep(1)
+                self._reconnect_to_db()
+                retries += 1
+
+        raise DataRetrievalError("FAILED TO SEARCH BIKE NAMES EVEN AFTER RETRYING")
+
     def load_and_prepare_data_from_db(self):
         try:
             self._load_warranty_data()

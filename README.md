@@ -24,6 +24,8 @@ OpenAPI schema: http://192.168.100.113:9001/api/schema/
 
 Checkout API: http://192.168.100.113:9001/api/checkout?chassis=RG642003173&mileage=4000
 
+Search bike names (typeahead): http://192.168.100.113:9001/api/bikes/search?query=cb&limit=20&offset=0
+
 Top warranty parts: http://192.168.100.113:9001/api/warranty/top-parts?limit=30
 
 Top warranty parts (last 2 years): http://192.168.100.113:9001/api/warranty/top-parts?period=2y

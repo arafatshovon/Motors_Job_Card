@@ -273,3 +273,62 @@ def top_warranty_parts_for_bike_model_api(request):
         )
 
 
+@extend_schema(
+    operation_id="search_bike_names",
+    description="Search bike model names (Product.ProductName) for typeahead/autocomplete.",
+    parameters=[
+        OpenApiParameter(
+            name="query",
+            type=OpenApiTypes.STR,
+            required=True,
+            description="User input; matched using LIKE %query% (minimum 2 chars).",
+        ),
+        OpenApiParameter(
+            name="limit",
+            type=OpenApiTypes.INT,
+            required=False,
+            description="Page size (default 20, max 200).",
+        ),
+        OpenApiParameter(
+            name="offset",
+            type=OpenApiTypes.INT,
+            required=False,
+            description="Pagination offset (default 0).",
+        ),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+)
+@api_view(["GET"])
+def search_bike_names_api(request):
+    query = (request.query_params.get("query") or "").strip()
+    limit_raw = request.query_params.get("limit", "20")
+    offset_raw = request.query_params.get("offset", "0")
+
+    try:
+        limit = int(limit_raw)
+    except Exception:
+        return Response(
+            {"ret": False, "data": None, "error": f"Invalid 'limit' query param: {limit_raw}"},
+            status=400,
+        )
+
+    try:
+        offset = int(offset_raw)
+    except Exception:
+        return Response(
+            {"ret": False, "data": None, "error": f"Invalid 'offset' query param: {offset_raw}"},
+            status=400,
+        )
+
+    try:
+        data = db_manager.search_bike_names(query=query, limit=limit, offset=offset, min_len=2)
+        return Response({"ret": True, "data": data, "error": None})
+    except ValueError as e:
+        return Response({"ret": False, "data": None, "error": str(e)}, status=400)
+    except Exception as e:
+        return Response(
+            {"ret": False, "data": None, "error": f"{e.__class__.__name__}: {e}"},
+            status=500,
+        )
+
+
