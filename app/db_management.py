@@ -331,6 +331,113 @@ class DBManager:
 
         raise DataRetrievalError("FAILED TO FETCH TOP WARRANTY PARTS EVEN AFTER RETRYING")
 
+    def get_top_warranty_parts_by_bike_model(self, limit: int = 30, months_back: Optional[int] = None) -> List[dict]:
+        """
+        Live query to SQL Server: returns top N parts overall, broken down by bike model.
+
+        Output (flat rows):
+          [{'partCode': '...', 'partName': '...', 'bikeModel': '...', 'claimCount': 123}, ...]
+        """
+        try:
+            limit = int(limit)
+        except Exception:
+            limit = 30
+        limit = max(1, min(limit, 200))
+
+        months_back_int: Optional[int]
+        try:
+            months_back_int = None if months_back is None else int(months_back)
+        except Exception:
+            months_back_int = None
+
+        if months_back_int is not None:
+            months_back_int = max(1, min(months_back_int, 240))  # clamp to last 1..240 months
+
+        # Note: bike model is derived from the bike product sold for the chassis (invoice details -> Product BP).
+        sql = """
+            DECLARE @limit_parts INT = ?;
+            DECLARE @months_back INT = ?;
+
+            WITH Base AS (
+                SELECT
+                    ISNULL(P2.PartNo, OP2.SMSCode) AS PartCode,
+                    ISNULL(P2.ProductName, OP2.ProductName) AS PartName,
+                    BP.ProductName AS BikeModel
+                FROM DealarWarrantyClaim DWC2
+                INNER JOIN DealarWarrantyClaimProduct D2
+                    ON DWC2.DCWarrantyId = D2.DCWarrantyId
+                LEFT JOIN Product P2
+                    ON D2.ProductCode = P2.ProductCode
+                LEFT JOIN OtherProduct OP2
+                    ON D2.ProductCode = CONVERT(VARCHAR, OP2.ProductCode)
+                INNER JOIN DealarInvoiceDetails DID
+                    ON DWC2.ChassisNo = DID.ChassisNo
+                INNER JOIN Product BP
+                    ON DID.ProductCode = BP.ProductCode
+                WHERE DWC2.Status = 1
+                  AND (
+                        @months_back IS NULL
+                        OR DWC2.WCDate >= DATEADD(month, -@months_back, CONVERT(date, GETDATE()))
+                      )
+            ),
+            TopParts AS (
+                SELECT TOP (@limit_parts)
+                    PartCode,
+                    PartName,
+                    COUNT(*) AS TotalCount
+                FROM Base
+                GROUP BY PartCode, PartName
+                ORDER BY COUNT(*) DESC
+            )
+            SELECT
+                b.PartCode,
+                b.PartName,
+                b.BikeModel,
+                COUNT(*) AS ClaimCount
+            FROM Base b
+            INNER JOIN TopParts tp
+                ON b.PartCode = tp.PartCode
+               AND b.PartName = tp.PartName
+            GROUP BY b.PartCode, b.PartName, b.BikeModel, tp.TotalCount
+            ORDER BY tp.TotalCount DESC, b.PartCode ASC, ClaimCount DESC, b.BikeModel ASC;
+        """
+
+        max_retries = 3
+        retries = 0
+        cursor = None
+
+        while retries < max_retries:
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(sql, (limit, months_back_int))
+                rows = cursor.fetchall()
+                cursor.close()
+                cursor = None
+
+                out: List[dict] = []
+                for r in rows:
+                    out.append(
+                        {
+                            "partCode": None if r[0] is None else str(r[0]),
+                            "partName": None if r[1] is None else str(r[1]),
+                            "bikeModel": None if r[2] is None else str(r[2]),
+                            "claimCount": int(r[3]),
+                        }
+                    )
+                return out
+            except Exception as e:
+                if cursor:
+                    cursor.close()
+                    cursor = None
+                print(
+                    f"******* {retries + 1}. Failed to fetch top warranty parts by bike model: {e.__class__.__name__} | {e}"
+                )
+                time.sleep(1)
+                self._reconnect_to_db()
+                retries += 1
+
+        raise DataRetrievalError("FAILED TO FETCH TOP WARRANTY PARTS BY BIKE MODEL EVEN AFTER RETRYING")
+
     def load_and_prepare_data_from_db(self):
         try:
             self._load_warranty_data()
