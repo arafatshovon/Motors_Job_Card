@@ -1,7 +1,7 @@
 import pandas as pd
 import pyodbc
 import sys
-from typing import List
+from typing import List, Optional
 from datetime import datetime, timedelta
 from threading import Thread
 import time
@@ -250,6 +250,86 @@ class DBManager:
         except Exception as e:
             print(f"Sales data fetch error: {e.__class__.__name__} | {e}")
             raise DataRetrievalError("Failed to retrieve data")
+
+    def get_top_warranty_parts(self, limit: int = 30, months_back: Optional[int] = None) -> List[dict]:
+        """
+        Live query to SQL Server: returns top N parts by warranty-claim count.
+
+        Output:
+          [{'partCode': '...', 'partName': '...', 'claimCount': 123}, ...]
+        """
+        try:
+            limit = int(limit)
+        except Exception:
+            limit = 30
+        limit = max(1, min(limit, 200))
+
+        months_back_int: Optional[int]
+        try:
+            months_back_int = None if months_back is None else int(months_back)
+        except Exception:
+            months_back_int = None
+
+        if months_back_int is not None:
+            months_back_int = max(1, min(months_back_int, 240))  # clamp to last 1..240 months
+
+        sql = """
+            DECLARE @limit INT = ?;
+            DECLARE @months_back INT = ?;
+            SELECT TOP (@limit)
+                ISNULL(P2.PartNo, OP2.SMSCode) AS PartCode,
+                ISNULL(P2.ProductName, OP2.ProductName) AS PartName,
+                COUNT(*) AS ClaimCount
+            FROM DealarWarrantyClaim DWC2
+            INNER JOIN DealarWarrantyClaimProduct D2
+                ON DWC2.DCWarrantyId = D2.DCWarrantyId
+            LEFT JOIN Product P2
+                ON D2.ProductCode = P2.ProductCode
+            LEFT JOIN OtherProduct OP2
+                ON D2.ProductCode = CONVERT(VARCHAR, OP2.ProductCode)
+            WHERE DWC2.Status = 1
+              AND (
+                    @months_back IS NULL
+                    OR DWC2.WCDate >= DATEADD(month, -@months_back, CONVERT(date, GETDATE()))
+                  )
+            GROUP BY
+                ISNULL(P2.PartNo, OP2.SMSCode),
+                ISNULL(P2.ProductName, OP2.ProductName)
+            ORDER BY COUNT(*) DESC;
+        """
+
+        max_retries = 3
+        retries = 0
+        cursor = None
+
+        while retries < max_retries:
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(sql, (limit, months_back_int))
+                rows = cursor.fetchall()
+                cursor.close()
+                cursor = None
+
+                out: List[dict] = []
+                for r in rows:
+                    out.append(
+                        {
+                            "partCode": None if r[0] is None else str(r[0]),
+                            "partName": None if r[1] is None else str(r[1]),
+                            "claimCount": int(r[2]),
+                        }
+                    )
+                return out
+            except Exception as e:
+                if cursor:
+                    cursor.close()
+                    cursor = None
+                print(f"******* {retries + 1}. Failed to fetch top warranty parts: {e.__class__.__name__} | {e}")
+                time.sleep(1)
+                self._reconnect_to_db()
+                retries += 1
+
+        raise DataRetrievalError("FAILED TO FETCH TOP WARRANTY PARTS EVEN AFTER RETRYING")
 
     def load_and_prepare_data_from_db(self):
         try:
