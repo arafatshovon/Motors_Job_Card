@@ -198,3 +198,78 @@ def top_warranty_parts_by_bike_model_api(request):
         )
 
 
+@extend_schema(
+    operation_id="top_warranty_parts_for_bike_model",
+    description=(
+        "Top warranty-claimed parts for a single bike model (bikeModel + partCode + partName + claimCount + rank), "
+        "queried live from SQL Server."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="bike_model",
+            type=OpenApiTypes.STR,
+            required=True,
+            description="Bike model name (matches Product.ProductName from invoice details).",
+        ),
+        OpenApiParameter(
+            name="limit",
+            type=OpenApiTypes.INT,
+            required=False,
+            description="Top N parts to return (default 5, max 200).",
+        ),
+        OpenApiParameter(
+            name="years",
+            type=OpenApiTypes.INT,
+            required=False,
+            description="Filter to last N years (e.g. years=1). Can be combined with months.",
+        ),
+        OpenApiParameter(
+            name="months",
+            type=OpenApiTypes.INT,
+            required=False,
+            description="Filter to last N months (e.g. months=28). Can be combined with years.",
+        ),
+        OpenApiParameter(
+            name="period",
+            type=OpenApiTypes.STR,
+            required=False,
+            description="Filter using a single value like '1y' or '18m'. Overrides years/months if provided.",
+        ),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+)
+@api_view(["GET"])
+def top_warranty_parts_for_bike_model_api(request):
+    bike_model = (request.query_params.get("bike_model") or "").strip()
+    if not bike_model:
+        return Response(
+            {"ret": False, "data": [], "error": "Missing required query param: bike_model"},
+            status=400,
+        )
+
+    limit_raw = request.query_params.get("limit", "5")
+    try:
+        limit = int(limit_raw)
+    except Exception:
+        return Response(
+            {"ret": False, "data": [], "error": f"Invalid 'limit' query param: {limit_raw}"},
+            status=400,
+        )
+
+    try:
+        months_back = _parse_months_back(request.query_params)
+        data = db_manager.get_top_warranty_parts_for_bike_model(
+            bike_model=bike_model,
+            limit=limit,
+            months_back=months_back,
+        )
+        return Response({"ret": True, "data": data, "error": None})
+    except ValueError as e:
+        return Response({"ret": False, "data": [], "error": str(e)}, status=400)
+    except Exception as e:
+        return Response(
+            {"ret": False, "data": [], "error": f"{e.__class__.__name__}: {e}"},
+            status=500,
+        )
+
+

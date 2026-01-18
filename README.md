@@ -31,4 +31,6 @@ Top warranty parts (last 2 years): http://192.168.100.113:9001/api/warranty/top-
 Top warranty parts (last 6 months): http://192.168.100.113:9001/api/warranty/top-parts?months=6
 
 Top warranty parts by bike model (last 2 years): http://192.168.100.113:9001/api/warranty/top-parts/by-bike-model?period=2y&limit=30
+
+Top warranty parts for a specific bike model (last 28 months): http://192.168.100.113:9001/api/warranty/top-parts/for-bike-model?bike_model=Model%20Name&period=28m&limit=5
 ```
