@@ -18,5 +18,11 @@ sudo systemctl start/stop/status/restart motors_job_card.service
 
 ### API
 ```
-http://192.168.100.113:9001/checkout_api?chassis=RG642003173&mileage=4000
+Swagger UI: http://192.168.100.113:9001/api/docs/
+
+OpenAPI schema: http://192.168.100.113:9001/api/schema/
+
+Checkout API: http://192.168.100.113:9001/api/checkout?chassis=RG642003173&mileage=4000
+
+Top warranty parts: http://192.168.100.113:9001/api/warranty/top-parts?limit=30
 ```

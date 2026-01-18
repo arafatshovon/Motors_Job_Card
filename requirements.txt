@@ -1,5 +1,7 @@
 asgiref
 Django
+djangorestframework
+drf-spectacular
 numpy
 pandas
 pyodbc

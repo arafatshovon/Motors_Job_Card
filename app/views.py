@@ -4,6 +4,7 @@ from django.contrib.auth.models import User, auth
 from app.jobcard2 import JobCard, replace_elements, remove_duplicates, remove_elements
 from app.dictmap import mapping, removed_list
 from django.http import JsonResponse
+from app.db_management import db_manager
 
 
 def login(request):
@@ -47,6 +48,64 @@ def jobquery_web(request):
 def jobquery_api(request):
     dict_response = jobquery(request, method='GET')
     return JsonResponse(dict_response)
+
+def top_warranty_parts_api(request):
+    """
+    Returns top N warranty-claimed parts (by count) from cached warranty dataframe.
+
+    Query params:
+      - limit: int (default: 30, max: 200)
+    """
+    try:
+        limit_raw = request.GET.get('limit', '30')
+        try:
+            limit = int(limit_raw)
+        except Exception:
+            return JsonResponse(
+                {'ret': False, 'data': [], 'error': f"Invalid 'limit' query param: {limit_raw}"},
+                status=400,
+            )
+
+        limit = max(1, min(limit, 200))
+
+        df = db_manager.get_converted_warranty_df()
+        if df is None or getattr(df, "empty", True):
+            return JsonResponse({'ret': True, 'data': [], 'error': None})
+
+        cols = {'part_code', 'product_name'}
+        if not cols.issubset(set(df.columns)):
+            return JsonResponse(
+                {
+                    'ret': False,
+                    'data': [],
+                    'error': f"Warranty dataframe missing required columns: {sorted(cols)}",
+                },
+                status=500,
+            )
+
+        top_df = (
+            df[['part_code', 'product_name']]
+            .dropna()
+            .groupby(['part_code', 'product_name'], as_index=False)
+            .size()
+            .rename(columns={'size': 'claimCount'})
+            .sort_values(['claimCount', 'part_code'], ascending=[False, True])
+            .head(limit)
+        )
+
+        data = [
+            {
+                'partCode': str(row['part_code']),
+                'partName': str(row['product_name']),
+                'claimCount': int(row['claimCount']),
+            }
+            for _, row in top_df.iterrows()
+        ]
+
+        return JsonResponse({'ret': True, 'data': data, 'error': None})
+    except Exception as e:
+        error_msg = f"{e.__class__.__name__}: {e}"
+        return JsonResponse({'ret': False, 'data': [], 'error': error_msg}, status=500)
 
 
 def jobquery(request, method='GET'):
