@@ -332,3 +332,20 @@ def search_bike_names_api(request):
         )
 
 
+@extend_schema(
+    operation_id="all_bike_names",
+    description="Return all distinct bike model names (Product.ProductName). No input required.",
+    responses={200: OpenApiTypes.OBJECT},
+)
+@api_view(["GET"])
+def all_bike_names_api(request):
+    try:
+        data = db_manager.get_all_bike_names()
+        return Response({"ret": True, "data": data, "error": None})
+    except Exception as e:
+        return Response(
+            {"ret": False, "data": None, "error": f"{e.__class__.__name__}: {e}"},
+            status=500,
+        )
+
+

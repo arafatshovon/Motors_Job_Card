@@ -660,6 +660,57 @@ class DBManager:
 
         raise DataRetrievalError("FAILED TO SEARCH BIKE NAMES EVEN AFTER RETRYING")
 
+    def get_all_bike_names(self) -> dict:
+        """
+        Live query to SQL Server: return all distinct bike names from Product.ProductName.
+
+        Output:
+          {
+            'items': [{'bikeName': '...'}, ...],
+            'totalRows': 11506
+          }
+        """
+        sql = """
+            WITH Names AS (
+                SELECT DISTINCT
+                    LTRIM(RTRIM(ProductName)) AS BikeName
+                FROM Product
+                WHERE ProductName IS NOT NULL
+                  AND LTRIM(RTRIM(ProductName)) <> ''
+            )
+            SELECT BikeName
+            FROM Names
+            ORDER BY BikeName ASC;
+        """
+
+        max_retries = 3
+        retries = 0
+        cursor = None
+
+        while retries < max_retries:
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(sql)
+                rows = cursor.fetchall()
+                cursor.close()
+                cursor = None
+
+                items: List[dict] = []
+                for r in rows:
+                    items.append({"bikeName": None if r[0] is None else str(r[0])})
+
+                return {"items": items, "totalRows": len(items)}
+            except Exception as e:
+                if cursor:
+                    cursor.close()
+                    cursor = None
+                print(f"******* {retries + 1}. Failed to fetch all bike names: {e.__class__.__name__} | {e}")
+                time.sleep(1)
+                self._reconnect_to_db()
+                retries += 1
+
+        raise DataRetrievalError("FAILED TO FETCH ALL BIKE NAMES EVEN AFTER RETRYING")
+
     def load_and_prepare_data_from_db(self):
         try:
             self._load_warranty_data()
