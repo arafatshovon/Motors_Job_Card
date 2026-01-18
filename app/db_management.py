@@ -393,7 +393,8 @@ class DBManager:
                 b.PartCode,
                 b.PartName,
                 b.BikeModel,
-                COUNT(*) AS ClaimCount
+                COUNT(*) AS ClaimCount,
+                tp.TotalCount AS TotalCount
             FROM Base b
             INNER JOIN TopParts tp
                 ON b.PartCode = tp.PartCode
@@ -422,6 +423,7 @@ class DBManager:
                             "partName": None if r[1] is None else str(r[1]),
                             "bikeModel": None if r[2] is None else str(r[2]),
                             "claimCount": int(r[3]),
+                            "totalCount": int(r[4]),
                         }
                     )
                 return out

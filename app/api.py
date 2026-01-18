@@ -160,7 +160,34 @@ def top_warranty_parts_by_bike_model_api(request):
 
     try:
         months_back = _parse_months_back(request.query_params)
-        data = db_manager.get_top_warranty_parts_by_bike_model(limit=limit, months_back=months_back)
+        rows = db_manager.get_top_warranty_parts_by_bike_model(limit=limit, months_back=months_back)
+
+        # Transform flat rows into:
+        # [
+        #   {partCode, partName, totalCount, byBike: {bikeModel: claimCount}},
+        #   ...
+        # ]
+        grouped = {}
+        order = []
+        for r in rows:
+            key = (r.get("partCode"), r.get("partName"))
+            if key not in grouped:
+                grouped[key] = {
+                    "partCode": r.get("partCode"),
+                    "partName": r.get("partName"),
+                    "totalCount": int(r.get("totalCount") or 0),
+                    "byBike": {},
+                }
+                order.append(key)
+
+            bike_model = r.get("bikeModel") or "Unknown"
+            claim_count = int(r.get("claimCount") or 0)
+
+            # If bike model repeats (shouldn't), sum it.
+            prev = int(grouped[key]["byBike"].get(bike_model, 0))
+            grouped[key]["byBike"][bike_model] = prev + claim_count
+
+        data = [grouped[k] for k in order]
         return Response({"ret": True, "data": data, "error": None})
     except ValueError as e:
         return Response({"ret": False, "data": [], "error": str(e)}, status=400)
