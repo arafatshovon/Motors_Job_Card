@@ -179,34 +179,56 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
     bar_text = bar_text[::-1]
     partcodes = partcodes[::-1]
     
-    # Color palette for different partcodes
-    color_palette = [
-        '#4ade80',  # Green
-        '#f472b6',  # Pink
-        '#60a5fa',  # Blue
-        '#fbbf24',  # Yellow
-        '#a78bfa',  # Purple
-        '#fb923c',  # Orange
-        '#2dd4bf',  # Teal
-        '#f87171',  # Red
-        '#34d399',  # Emerald
-        '#818cf8',  # Indigo
-        '#e879f9',  # Fuchsia
-        '#38bdf8',  # Sky
-        '#facc15',  # Amber
-        '#4ade80',  # Lime
-        '#f97316',  # Deep Orange
-        '#c084fc',  # Violet
-        '#22d3ee',  # Cyan
-        '#fb7185',  # Rose
-        '#a3e635',  # Lime Green
-        '#fcd34d',  # Gold
-    ]
-    
-    # Assign colors based on partcode
-    unique_codes = list(dict.fromkeys(partcodes))  # Preserve order, remove duplicates
-    code_to_color = {code: color_palette[i % len(color_palette)] for i, code in enumerate(unique_codes)}
-    bar_colors = [code_to_color[code] for code in partcodes]
+    # Gradient colors based on claim count:
+    # low -> green, mid -> yellow, high -> red
+    def _clamp01(x: float) -> float:
+        return 0.0 if x < 0 else 1.0 if x > 1 else x
+
+    def _lerp(a: float, b: float, t: float) -> float:
+        return a + (b - a) * t
+
+    def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+        h = hex_color.lstrip("#")
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+    def _rgb_to_hex(r: float, g: float, b: float) -> str:
+        return "#{:02x}{:02x}{:02x}".format(int(round(r)), int(round(g)), int(round(b)))
+
+    def _mix_hex(c1: str, c2: str, t: float) -> str:
+        t = _clamp01(t)
+        r1, g1, b1 = _hex_to_rgb(c1)
+        r2, g2, b2 = _hex_to_rgb(c2)
+        return _rgb_to_hex(_lerp(r1, r2, t), _lerp(g1, g2, t), _lerp(b1, b2, t))
+
+    def _relative_luminance(hex_color: str) -> float:
+        # WCAG-ish luminance estimate for contrast choice
+        r, g, b = _hex_to_rgb(hex_color)
+        rs, gs, bs = r / 255.0, g / 255.0, b / 255.0
+        return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs
+
+    try:
+        numeric_values = [float(v) for v in values]
+    except Exception:
+        numeric_values = [0.0 for _ in values]
+
+    vmin = min(numeric_values) if numeric_values else 0.0
+    vmax = max(numeric_values) if numeric_values else 1.0
+    denom = (vmax - vmin) if (vmax - vmin) != 0 else 1.0
+
+    green = "#22c55e"
+    yellow = "#facc15"
+    red = "#ef4444"
+
+    bar_colors: list[str] = []
+    text_colors: list[str] = []
+    for v in numeric_values:
+        t = _clamp01((v - vmin) / denom)
+        if t <= 0.5:
+            c = _mix_hex(green, yellow, t * 2.0)
+        else:
+            c = _mix_hex(yellow, red, (t - 0.5) * 2.0)
+        bar_colors.append(c)
+        text_colors.append("#0b1220" if _relative_luminance(c) > 0.62 else "#ffffff")
     
     # Create horizontal bar chart
     fig = go.Figure()
@@ -222,7 +244,7 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
         text=bar_text,
         textposition='inside',
         insidetextanchor='end',
-        textfont=dict(color='#0f172a', size=12, family='Outfit, sans-serif'),
+        textfont=dict(color=text_colors, size=12, family='Outfit, sans-serif'),
         customdata=partcodes,
         hovertemplate='<b>Partcode: %{customdata}</b><br>Claim Count: %{x}<extra></extra>'
     ))
@@ -387,12 +409,32 @@ custom_css = """
     --accent-green: #22c55e;
     --accent-red: #ef4444;
     --border-color: #e2e8f0;
+    /* Inputs: slightly warmer white to stand out from card background */
+    --field-bg: #ffffff;
+    --field-border: #94a3b8;
+    --field-focus: #0ea5e9;
+    /* Status: calm info tone */
+    --status-bg: #f0f9ff;
+    --status-border: #7dd3fc;
+
+    /* Dropdown (bike model): subtle tint so it doesn't blend with card */
+    --dropdown-bg: #ffffff;
+}
+
+/* Fallback: ensure vars available even if :root scoping differs */
+.gradio-container {
+    --field-bg: var(--field-bg);
+    --field-border: var(--field-border);
+    --field-focus: var(--field-focus);
+    --status-bg: var(--status-bg);
+    --status-border: var(--status-border);
 }
 
 .gradio-container {
     font-family: 'Outfit', sans-serif !important;
     background: #ffffff !important;
     min-height: 100vh;
+    color-scheme: light;
 }
 
 .main-header {
@@ -423,12 +465,176 @@ custom_css = """
     border-radius: 12px !important;
 }
 
-.gr-input, .gr-number input, .gr-textbox input {
-    background: #ffffff !important;
-    border: 1px solid var(--border-color) !important;
+/* Inputs: ensure consistent, eye-soothing contrast across browsers */
+.gradio-container .gr-input input,
+.gradio-container .gr-input textarea,
+.gradio-container .gr-input select,
+.gradio-container .gr-number input,
+.gradio-container .gr-textbox input,
+.gradio-container .gr-textbox textarea,
+.gradio-container .gr-dropdown select {
+    background: var(--field-bg) !important;
+    border: 1px solid var(--field-border) !important;
     color: var(--text-primary) !important;
     font-family: 'JetBrains Mono', monospace !important;
-    border-radius: 8px !important;
+    border-radius: 10px !important;
+    box-shadow: none !important;
+}
+
+/* Bike model dropdown: slightly tinted background for better visibility */
+.gradio-container .gr-dropdown select {
+    background: var(--dropdown-bg) !important;
+}
+
+/* Gradio 6 Dropdown is a combobox (input), not a native <select>.
+   Target the specific bike dropdown via elem_id for reliable styling. */
+#bike-model-dropdown input,
+#bike-model-dropdown textarea,
+#bike-model-dropdown [role="combobox"],
+#bike-model-dropdown [role="textbox"] {
+    background: var(--dropdown-bg) !important;
+}
+
+#bike-model-dropdown input:focus,
+#bike-model-dropdown textarea:focus,
+#bike-model-dropdown [role="combobox"]:focus,
+#bike-model-dropdown [role="textbox"]:focus {
+    background: var(--dropdown-bg) !important;
+}
+
+/* Gradio theme-driven styling: set the local theme variables so the entire
+   dropdown control (container + arrow button) uses our dropdown background. */
+#bike-model-dropdown {
+    --input-background-fill: var(--dropdown-bg);
+    --input-background-fill-focus: var(--dropdown-bg);
+    --input-border-color: var(--field-border);
+    --input-border-color-focus: var(--field-focus);
+    --input-placeholder-color: #94a3b8;
+    --input-shadow-focus: 0 0 0 3px rgba(14, 165, 233, 0.20);
+}
+
+/* Make the visible dropdown "box" white (not just the text input) */
+#bike-model-dropdown .gradio-style,
+#bike-model-dropdown .gradio-style > div,
+#bike-model-dropdown .gradio-style > label,
+#bike-model-dropdown .gradio-style > span {
+    background: #ffffff !important;
+}
+
+#bike-model-dropdown .gradio-style,
+#bike-model-dropdown .gradio-style * {
+    --input-background-fill: var(--dropdown-bg);
+    --input-background-fill-focus: var(--dropdown-bg);
+}
+
+/* Try common button/icon areas inside the dropdown (arrow area) */
+#bike-model-dropdown button,
+#bike-model-dropdown [role="button"] {
+    background: var(--dropdown-bg) !important;
+}
+
+/* Dropdown popup menu (the expanded list of options) */
+.gradio-container [role="listbox"] {
+    background: #ffffff !important;
+    border: 1px solid var(--field-border) !important;
+}
+
+.gradio-container [role="option"] {
+    background: transparent !important;
+    color: var(--text-primary) !important;
+}
+
+.gradio-container [role="option"][aria-selected="true"] {
+    background: #e0f2fe !important;
+}
+
+.gradio-container [role="option"]:hover,
+.gradio-container [role="option"]:focus {
+    background: #f1f5f9 !important;
+}
+
+/* Extra-wide net for Gradio v4 DOM changes */
+.gradio-container input:not([type="checkbox"]):not([type="radio"]),
+.gradio-container textarea,
+.gradio-container select {
+    background: var(--field-bg) !important;
+    border-color: var(--field-border) !important;
+    color: var(--text-primary) !important;
+}
+
+.gradio-container .gr-input input::placeholder,
+.gradio-container .gr-input textarea::placeholder {
+    color: #94a3b8 !important;
+    opacity: 1 !important;
+}
+
+.gradio-container .gr-input input:focus,
+.gradio-container .gr-input textarea:focus,
+.gradio-container .gr-input select:focus,
+.gradio-container .gr-number input:focus,
+.gradio-container .gr-textbox input:focus,
+.gradio-container .gr-textbox textarea:focus,
+.gradio-container .gr-dropdown select:focus {
+    outline: none !important;
+    border-color: var(--field-focus) !important;
+    background: var(--dropdown-bg) !important;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.20) !important;
+}
+
+/* Disabled/read-only fields (e.g., Status output) shouldn't fade into the card */
+.gradio-container input:disabled,
+.gradio-container textarea:disabled,
+.gradio-container select:disabled,
+.gradio-container input[readonly],
+.gradio-container textarea[readonly] {
+    opacity: 1 !important;
+    color: #0f172a !important;
+}
+
+/* Chrome autofill */
+.gradio-container input:-webkit-autofill,
+.gradio-container textarea:-webkit-autofill {
+    -webkit-text-fill-color: var(--text-primary) !important;
+    box-shadow: 0 0 0px 1000px var(--field-bg) inset !important;
+    transition: background-color 9999s ease-in-out 0s;
+}
+
+/* Number spinners: normalize Chrome/Firefox look */
+.gradio-container input[type="number"]::-webkit-outer-spin-button,
+.gradio-container input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.gradio-container input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+/* Status bars (Textbox outputs): subtle blue background, clear border */
+.status-output textarea,
+.status-output input {
+    background: var(--status-bg) !important;
+    border-color: var(--status-border) !important;
+}
+
+/* Tabs + headings text colors */
+.gradio-container h1,
+.gradio-container h2,
+.gradio-container h3,
+.gradio-container h4 {
+    color: var(--text-primary) !important;
+}
+
+.gradio-container [role="tablist"] button,
+.gradio-container button[role="tab"],
+.gradio-container .tab-nav button {
+    color: var(--text-primary) !important;
+}
+
+.gradio-container button[role="tab"][aria-selected="true"],
+.gradio-container .tab-nav button.selected {
+    color: var(--primary-hover) !important;
+    font-weight: 600 !important;
 }
 
 .gr-button-primary {
@@ -515,7 +721,8 @@ with gr.Blocks() as app:
                     status_output_1 = gr.Textbox(
                         label="Status",
                         interactive=False,
-                        lines=1
+                        lines=1,
+                        elem_classes=["status-output"]
                     )
                     results_chart_1 = gr.Plot(
                         label="Top Parts Chart"
@@ -568,7 +775,8 @@ with gr.Blocks() as app:
                         label="🏍️ Select Bike Model",
                         info="Type to filter bikes",
                         interactive=True,
-                        filterable=True
+                        filterable=True,
+                        elem_id="bike-model-dropdown"
                     )
                     
                     fetch_btn_2 = gr.Button("🚀 Fetch Data", variant="primary", size="lg")
@@ -578,7 +786,8 @@ with gr.Blocks() as app:
                     status_output_2 = gr.Textbox(
                         label="Status",
                         interactive=False,
-                        lines=1
+                        lines=1,
+                        elem_classes=["status-output"]
                     )
                     results_chart_2 = gr.Plot(
                         label="Top Parts by Bike Model Chart"
