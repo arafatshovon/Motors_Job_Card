@@ -21,3 +21,17 @@ services:
     #   timeout: 30s
     #   retries: 5
     #   start_period: 30s
+
+  gradio_panel:
+    build:
+      context: .
+      dockerfile: Dockerfile.gradio
+    container_name: "motors-gradio-panel"
+    ports:
+      - "${GRADIO_PORT:-9002}:9002"
+    restart: always
+    depends_on:
+      - motors_job_card
+    environment:
+      - API_HOST=motors-job-card
+      - API_PORT=${PORT:-9001}
