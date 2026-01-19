@@ -26,7 +26,7 @@ Checkout API: http://192.168.100.113:9001/api/checkout?chassis=RG642003173&milea
 
 Search bike names (typeahead): http://192.168.100.113:9001/api/bikes/search?query=cb&limit=20&offset=0
 
-All bike names: http://192.168.100.113:9001/api/bikes/names
+Bike names from warranty claims only: http://192.168.100.113:9001/api/bikes/names
 
 Top warranty parts: http://192.168.100.113:9001/api/warranty/top-parts?limit=30
 

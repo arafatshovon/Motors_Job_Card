@@ -662,7 +662,7 @@ class DBManager:
 
     def get_all_bike_names(self) -> dict:
         """
-        Live query to SQL Server: return all distinct bike names from Product.ProductName.
+        Live query to SQL Server: return all distinct bike names that appear in warranty claims.
 
         Output:
           {
@@ -673,10 +673,17 @@ class DBManager:
         sql = """
             WITH Names AS (
                 SELECT DISTINCT
-                    LTRIM(RTRIM(ProductName)) AS BikeName
-                FROM Product
-                WHERE ProductName IS NOT NULL
-                  AND LTRIM(RTRIM(ProductName)) <> ''
+                    LTRIM(RTRIM(BP.ProductName)) AS BikeName
+                FROM DealarWarrantyClaim DWC
+                INNER JOIN DealarInvoiceDetails DID
+                    ON DWC.ChassisNo = DID.ChassisNo
+                INNER JOIN Product BP
+                    ON DID.ProductCode = BP.ProductCode
+                INNER JOIN DealarInvoiceMaster DIM
+                    ON DIM.InvoiceId = DID.InvoiceId
+                WHERE DWC.Status = 1
+                  AND BP.ProductName IS NOT NULL
+                  AND LTRIM(RTRIM(BP.ProductName)) <> ''
             )
             SELECT BikeName
             FROM Names
