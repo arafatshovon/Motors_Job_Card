@@ -284,19 +284,69 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
     return fig
 
 
-def fetch_top_parts(limit: int, months: int, years: int):
+def convert_date_to_string(date_value):
+    """Convert date to YYYY-MM-DD string format."""
+    from datetime import datetime
+    
+    if date_value is None or date_value == "":
+        return None
+    
+    # If it's already a string in date format
+    if isinstance(date_value, str):
+        date_str = date_value.strip()
+        if date_str:
+            return date_str
+        return None
+    
+    # If it's a datetime object
+    if hasattr(date_value, 'strftime'):
+        return date_value.strftime("%Y-%m-%d")
+    
+    # If it's a timestamp (number) - Gradio DateTime returns timestamp
+    if isinstance(date_value, (int, float)):
+        try:
+            dt = datetime.fromtimestamp(date_value)
+            return dt.strftime("%Y-%m-%d")
+        except:
+            pass
+    
+    # Try to convert to string as fallback
+    try:
+        return str(date_value)
+    except:
+        return None
+
+
+def fetch_top_parts(limit, from_date, to_date):
     """Fetch top warranty parts from the API."""
     try:
-        params = {
-            "limit": int(limit),
-            "months": int(months),
-            "years": int(years)
-        }
+        # Convert dates to string format YYYY-MM-DD
+        from_date_str = convert_date_to_string(from_date)
+        to_date_str = convert_date_to_string(to_date)
+        print(from_date_str,type(from_date_str))
+        print(to_date_str,type(to_date_str))
+        # from_date is REQUIRED by the API
+        if not from_date_str:
+            fig = create_bar_chart(pd.DataFrame())
+            return fig, "⚠️ Please select a From Date (required)"
+        
+        # Build params - send only string values
+        params = {}
+        if limit is not None and limit != "" and limit != 0:
+            params["limit"] = int(limit)
+        
+        # Add dates as strings (YYYY-MM-DD format)
+        params["from_date"] = from_date_str
+        
+        # to_date is optional (API defaults to today)
+        if to_date_str:
+            params["to_date"] = to_date_str
         
         response = requests.get(API_URL_TOP_PARTS, params=params, timeout=30)
         response.raise_for_status()
-        
+        print(API_URL_TOP_PARTS)
         data = response.json()
+        print(data)
         
         # Handle different response formats
         if isinstance(data, list):
@@ -689,29 +739,23 @@ with gr.Blocks() as app:
                     
                     limit_input_1 = gr.Number(
                         label="📊 Limit",
-                        value=10,
-                        minimum=1,
-                        maximum=1000,
+                        value=None,
+                        # minimum=1,
+                        # maximum=1000,
                         step=1,
                         info="Number of records to fetch"
                     )
                     
-                    months_input_1 = gr.Number(
-                        label="📅 Months",
-                        value=1,
-                        minimum=1,
-                        maximum=12,
-                        step=1,
-                        info="Month filter (1-12)"
+                    from_date_input_1 = gr.DateTime(
+                        label="📅 From Date (Required)",
+                        include_time=False,
+                        info="Start date - REQUIRED"
                     )
                     
-                    years_input_1 = gr.Number(
-                        label="📆 Last X Years (example: 1)",
-                        value=1,
-                        minimum=1,
-                        maximum=200,
-                        step=1,
-                        info="Year filter"
+                    to_date_input_1 = gr.DateTime(
+                        label="📅 To Date (Optional)",
+                        include_time=False,
+                        info="End date - defaults to today if empty"
                     )
                     
                     fetch_btn_1 = gr.Button("🚀 Fetch Data", variant="primary", size="lg")
@@ -731,17 +775,16 @@ with gr.Blocks() as app:
             # Connect the button to the function
             fetch_btn_1.click(
                 fn=fetch_top_parts,
-                inputs=[limit_input_1, months_input_1, years_input_1],
+                inputs=[limit_input_1, from_date_input_1, to_date_input_1],
                 outputs=[results_chart_1, status_output_1]
             )
             
-            # Also trigger on Enter key for any input
-            for input_component in [limit_input_1, months_input_1, years_input_1]:
-                input_component.submit(
-                    fn=fetch_top_parts,
-                    inputs=[limit_input_1, months_input_1, years_input_1],
-                    outputs=[results_chart_1, status_output_1]
-                )
+            # Also trigger on Enter key for limit input
+            limit_input_1.submit(
+                fn=fetch_top_parts,
+                inputs=[limit_input_1, from_date_input_1, to_date_input_1],
+                outputs=[results_chart_1, status_output_1]
+            )
         
         # Tab 2: Top Parts by Bike Model
         with gr.TabItem("🏍️ By Bike Model"):
