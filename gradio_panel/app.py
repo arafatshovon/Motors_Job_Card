@@ -11,6 +11,7 @@ API_BASE_URL = f"http://{API_HOST}:{API_PORT}"
 
 API_URL_TOP_PARTS = f"{API_BASE_URL}/api/warranty/top-parts"
 API_URL_BIKE_MODEL = f"{API_BASE_URL}/api/warranty/top-parts/for-bike-model"
+API_URL_FAILURE_RATIO = f"{API_BASE_URL}/api/warranty/failure-ratio/by-bike-model"
 API_URL_BIKE_NAMES = f"{API_BASE_URL}/api/bikes/names"
 
 # API_URL_TOP_PARTS = "http://0.0.0.0:9001/api/warranty/top-parts"
@@ -485,6 +486,194 @@ def fetch_parts_by_bike_model(limit, bike_model: str, from_date, to_date):
         return fig, f"❌ Error: {str(e)}"
 
 
+def create_failure_ratio_chart(df: pd.DataFrame, title: str = "Bike Model Failure Ratio"):
+    """Create a horizontal bar chart for bike model failure ratios with hover details."""
+    if df is None or df.empty:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No data available",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font=dict(size=20, color="#64748b"),
+        )
+        fig.update_layout(paper_bgcolor="#ffffff", plot_bgcolor="#ffffff", height=400)
+        return fig
+
+    # Normalize expected columns (API returns camelCase)
+    work_df = df.copy()
+    for col in ["bikeName", "bikeCode", "totalBikeSold", "totalPartsClaimed", "partsFailureRatio"]:
+        if col not in work_df.columns:
+            # Allow some flexibility if keys differ
+            alt = next((c for c in work_df.columns if c.lower() == col.lower()), None)
+            if alt:
+                work_df[col] = work_df[alt]
+
+    if "partsFailureRatio" not in work_df.columns or "bikeName" not in work_df.columns:
+        return create_bar_chart(df, title)
+
+    work_df["partsFailureRatio"] = pd.to_numeric(work_df["partsFailureRatio"], errors="coerce").fillna(0.0)
+    work_df["totalBikeSold"] = pd.to_numeric(work_df.get("totalBikeSold", 0), errors="coerce").fillna(0).astype(int)
+    work_df["totalPartsClaimed"] = (
+        pd.to_numeric(work_df.get("totalPartsClaimed", 0), errors="coerce").fillna(0).astype(int)
+    )
+
+    # Sort by failure ratio (descending); we will reverse later for horizontal top-to-bottom display.
+    work_df = work_df.sort_values(by="partsFailureRatio", ascending=False)
+
+    labels = work_df["bikeName"].astype(str).tolist()
+    values = work_df["partsFailureRatio"].astype(float).tolist()
+
+    # Put highest at top in a horizontal bar chart
+    labels = labels[::-1]
+    values = values[::-1]
+
+    # Hover details (aligned with reversed labels/values)
+    bike_codes = work_df.get("bikeCode", pd.Series([""] * len(work_df))).astype(str).tolist()[::-1]
+    sold = work_df.get("totalBikeSold", pd.Series([0] * len(work_df))).astype(int).tolist()[::-1]
+    claimed = work_df.get("totalPartsClaimed", pd.Series([0] * len(work_df))).astype(int).tolist()[::-1]
+
+    # Gradient colors top-to-bottom: red -> yellow -> green
+    # Since we sort desc (top = highest ratio), mapping by value gives the desired visual.
+    def _clamp01(x: float) -> float:
+        return 0.0 if x < 0 else 1.0 if x > 1 else x
+
+    def _lerp(a: float, b: float, t: float) -> float:
+        return a + (b - a) * t
+
+    def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+        h = hex_color.lstrip("#")
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+    def _rgb_to_hex(r: float, g: float, b: float) -> str:
+        return "#{:02x}{:02x}{:02x}".format(int(round(r)), int(round(g)), int(round(b)))
+
+    def _mix_hex(c1: str, c2: str, t: float) -> str:
+        t = _clamp01(t)
+        r1, g1, b1 = _hex_to_rgb(c1)
+        r2, g2, b2 = _hex_to_rgb(c2)
+        return _rgb_to_hex(_lerp(r1, r2, t), _lerp(g1, g2, t), _lerp(b1, b2, t))
+
+    try:
+        numeric_values = [float(v) for v in values]
+    except Exception:
+        numeric_values = [0.0 for _ in values]
+
+    vmin = min(numeric_values) if numeric_values else 0.0
+    vmax = max(numeric_values) if numeric_values else 1.0
+    denom = (vmax - vmin) if (vmax - vmin) != 0 else 1.0
+
+    green = "#22c55e"
+    yellow = "#facc15"
+    red = "#ef4444"
+
+    bar_colors: list[str] = []
+    for v in numeric_values:
+        t = _clamp01((v - vmin) / denom)
+        if t <= 0.5:
+            c = _mix_hex(green, yellow, t * 2.0)
+        else:
+            c = _mix_hex(yellow, red, (t - 0.5) * 2.0)
+        bar_colors.append(c)
+
+    # Display as percentage for readability
+    bar_text = [f"{(v * 100.0):.2f}%" for v in values]
+
+    customdata = list(zip(bike_codes, sold, claimed))
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            y=labels,
+            x=values,
+            orientation="h",
+            marker=dict(color=bar_colors, line=dict(color="rgba(255,255,255,0.3)", width=1)),
+            text=bar_text,
+            textposition="inside",
+            insidetextanchor="end",
+            textfont=dict(color="#0b1220", size=12, family="Outfit, sans-serif"),
+            customdata=customdata,
+            hovertemplate=(
+                "<b>%{y}</b><br>"
+                "Bike Code: %{customdata[0]}<br>"
+                "Failure Ratio: %{x:.4f}<br>"
+                "Total Bike Sold: %{customdata[1]}<br>"
+                "Total Parts Claimed: %{customdata[2]}<extra></extra>"
+            ),
+        )
+    )
+
+    fig.update_layout(
+        title=dict(text=f"<b>{title}</b>", font=dict(size=18, color="#1e293b"), x=0.5, xanchor="center"),
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        font=dict(color="#1e293b", family="Outfit, sans-serif"),
+        height=max(450, len(labels) * 42),
+        margin=dict(l=20, r=80, t=60, b=40),
+        xaxis=dict(
+            showgrid=True,
+            gridcolor="#e2e8f0",
+            gridwidth=1,
+            zeroline=False,
+            tickfont=dict(color="#64748b", size=12),
+            title=dict(text="Parts Failure Ratio", font=dict(color="#64748b", size=12)),
+            tickformat=".2%",
+        ),
+        yaxis=dict(showgrid=False, tickfont=dict(color="#1e293b", size=13), ticksuffix="  "),
+        bargap=0.3,
+        showlegend=False,
+    )
+
+    return fig
+
+
+def fetch_failure_ratio(limit):
+    """Fetch bike model failure ratios from the API."""
+    try:
+        params = {}
+        if limit is not None and limit != "" and limit != 0:
+            params["limit"] = int(limit)
+
+        response = requests.get(API_URL_FAILURE_RATIO, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+
+        if isinstance(data, list):
+            df = pd.DataFrame(data)
+        elif isinstance(data, dict):
+            if "data" in data:
+                df = pd.DataFrame(data["data"])
+            elif "results" in data:
+                df = pd.DataFrame(data["results"])
+            else:
+                df = pd.DataFrame([data])
+        else:
+            fig = create_failure_ratio_chart(pd.DataFrame())
+            return fig, f"Unexpected response format: {type(data)}"
+
+        if df.empty:
+            fig = create_failure_ratio_chart(pd.DataFrame())
+            return fig, "No data found."
+
+        fig = create_failure_ratio_chart(df, "Bike Model Failure Ratio (Parts Claimed / Bikes Sold)")
+        return fig, f"✅ Loaded {len(df)} bike models"
+
+    except requests.exceptions.ConnectionError:
+        fig = create_failure_ratio_chart(pd.DataFrame())
+        return fig, "❌ Connection Error: Could not connect to the API. Make sure the server is running."
+    except requests.exceptions.Timeout:
+        fig = create_failure_ratio_chart(pd.DataFrame())
+        return fig, "❌ Timeout: The request took too long to complete."
+    except requests.exceptions.HTTPError as e:
+        fig = create_failure_ratio_chart(pd.DataFrame())
+        return fig, f"❌ HTTP Error: {e}"
+    except Exception as e:
+        fig = create_failure_ratio_chart(pd.DataFrame())
+        return fig, f"❌ Error: {str(e)}"
+
+
 # Custom CSS for a modern look
 custom_css = """
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@400;500;600;700&display=swap');
@@ -912,6 +1101,43 @@ with gr.Blocks() as app:
                 fn=fetch_parts_by_bike_model,
                 inputs=[limit_input_2, bike_dropdown, from_date_input_2, to_date_input_2],
                 outputs=[results_chart_2, status_output_2]
+            )
+
+        # Tab 3: Failure Ratio by Bike Model
+        with gr.TabItem("📉 Failure Ratio"):
+            with gr.Row():
+                with gr.Column(scale=1):
+                    gr.Markdown("### ⚙️ Query Parameters")
+
+                    limit_input_3 = gr.Number(
+                        label="📊 Limit (optional)",
+                        value=None,
+                        step=1,
+                        info="Number of bike models to fetch (leave empty for default)",
+                    )
+
+                    fetch_btn_3 = gr.Button("🚀 Fetch Data", variant="primary", size="lg")
+
+                with gr.Column(scale=3):
+                    gr.Markdown("### 📊 Visualization")
+                    status_output_3 = gr.Textbox(
+                        label="Status",
+                        interactive=False,
+                        lines=1,
+                        elem_classes=["status-output"],
+                    )
+                    results_chart_3 = gr.Plot(label="Failure Ratio by Bike Model")
+
+            fetch_btn_3.click(
+                fn=fetch_failure_ratio,
+                inputs=[limit_input_3],
+                outputs=[results_chart_3, status_output_3],
+            )
+
+            limit_input_3.submit(
+                fn=fetch_failure_ratio,
+                inputs=[limit_input_3],
+                outputs=[results_chart_3, status_output_3],
             )
 
 

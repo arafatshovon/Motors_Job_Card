@@ -560,6 +560,116 @@ class DBManager:
 
         raise DataRetrievalError("FAILED TO FETCH TOP WARRANTY PARTS FOR BIKE MODEL EVEN AFTER RETRYING")
 
+    def get_bike_model_failure_ratios(self, limit: int = 100) -> List[dict]:
+        """
+        Live query to SQL Server: parts failure ratio by bike model.
+
+        Failure ratio definition (as provided):
+          TotalPartsClaimed / TotalBikeSold
+
+        Output:
+          [{
+            'bikeCode': '...',
+            'bikeName': '...',
+            'totalBikeSold': 123,
+            'totalPartsClaimed': 45,
+            'partsFailureRatio': 0.36585
+          }, ...]
+        """
+        try:
+            limit_int = int(limit)
+        except Exception:
+            limit_int = 100
+        limit_int = max(1, min(limit_int, 500))
+
+        sql = """
+            DECLARE @limit INT = ?;
+
+            ;WITH BikeSold AS (
+                SELECT
+                    BP.ProductCode AS BikeCode,
+                    BP.ProductName AS BikeName,
+                    COUNT(DISTINCT DID.ChassisNo) AS TotalBikeSold
+                FROM DealarInvoiceDetails DID
+                INNER JOIN Product BP
+                    ON DID.ProductCode = BP.ProductCode
+                GROUP BY
+                    BP.ProductCode,
+                    BP.ProductName
+            ),
+            PartsClaimed AS (
+                SELECT
+                    BP.ProductCode AS BikeCode,
+                    BP.ProductName AS BikeName,
+                    COUNT(*) AS TotalPartsClaimed
+                FROM DealarWarrantyClaim DWC
+                INNER JOIN DealarWarrantyClaimProduct DWCP
+                    ON DWC.DCWarrantyId = DWCP.DCWarrantyId
+                INNER JOIN DealarInvoiceDetails DID
+                    ON DWC.ChassisNo = DID.ChassisNo
+                INNER JOIN Product BP
+                    ON DID.ProductCode = BP.ProductCode
+                WHERE DWC.Status = 1
+                GROUP BY
+                    BP.ProductCode,
+                    BP.ProductName
+            )
+            SELECT TOP (@limit)
+                BS.BikeCode,
+                BS.BikeName,
+                BS.TotalBikeSold,
+                ISNULL(PC.TotalPartsClaimed, 0) AS TotalPartsClaimed,
+                (
+                    CAST(ISNULL(PC.TotalPartsClaimed, 0) AS FLOAT)
+                    / NULLIF(BS.TotalBikeSold, 0)
+                ) AS PartsFailureRatio
+            FROM BikeSold BS
+            LEFT JOIN PartsClaimed PC
+                ON BS.BikeCode = PC.BikeCode
+            WHERE (
+                CAST(ISNULL(PC.TotalPartsClaimed, 0) AS FLOAT)
+                / NULLIF(BS.TotalBikeSold, 0)
+            ) != 0
+            ORDER BY PartsFailureRatio DESC;
+        """
+
+        max_retries = 3
+        retries = 0
+        cursor = None
+
+        while retries < max_retries:
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(sql, (limit_int,))
+                rows = cursor.fetchall()
+                cursor.close()
+                cursor = None
+
+                out: List[dict] = []
+                for r in rows:
+                    out.append(
+                        {
+                            "bikeCode": None if r[0] is None else str(r[0]),
+                            "bikeName": None if r[1] is None else str(r[1]),
+                            "totalBikeSold": int(r[2] or 0),
+                            "totalPartsClaimed": int(r[3] or 0),
+                            "partsFailureRatio": None if r[4] is None else float(r[4]),
+                        }
+                    )
+                return out
+            except Exception as e:
+                if cursor:
+                    cursor.close()
+                    cursor = None
+                print(
+                    f"******* {retries + 1}. Failed to fetch bike model failure ratios: {e.__class__.__name__} | {e}"
+                )
+                time.sleep(1)
+                self._reconnect_to_db()
+                retries += 1
+
+        raise DataRetrievalError("FAILED TO FETCH BIKE MODEL FAILURE RATIOS EVEN AFTER RETRYING")
+
     def search_bike_names(
         self,
         query: str,

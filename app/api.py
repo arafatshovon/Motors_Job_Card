@@ -256,6 +256,43 @@ def top_warranty_parts_for_bike_model_api(request):
 
 
 @extend_schema(
+    operation_id="warranty_failure_ratio_by_bike_model",
+    description=(
+        "Bike model failure ratio based on parts claimed vs bikes sold, queried live from SQL Server. "
+        "Returns (bikeCode, bikeName, totalBikeSold, totalPartsClaimed, partsFailureRatio)."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="limit",
+            type=OpenApiTypes.INT,
+            required=False,
+            description="Number of bike models to return (default 100, max 500).",
+        ),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+)
+@api_view(["GET"])
+def warranty_failure_ratio_by_bike_model_api(request):
+    limit_raw = request.query_params.get("limit", "100")
+    try:
+        limit = int(limit_raw)
+    except Exception:
+        return Response(
+            {"ret": False, "data": [], "error": f"Invalid 'limit' query param: {limit_raw}"},
+            status=400,
+        )
+
+    try:
+        data = db_manager.get_bike_model_failure_ratios(limit=limit)
+        return Response({"ret": True, "data": data, "error": None})
+    except Exception as e:
+        return Response(
+            {"ret": False, "data": [], "error": f"{e.__class__.__name__}: {e}"},
+            status=500,
+        )
+
+
+@extend_schema(
     operation_id="search_bike_names",
     description="Search bike model names (Product.ProductName) for typeahead/autocomplete.",
     parameters=[
