@@ -368,7 +368,7 @@ def fetch_top_parts(limit, from_date, to_date):
         # Create the chart
         fig = create_bar_chart(df, "Warranty Exposure Dashboard")
         
-        return fig, f"✅ Successfully fetched {len(df)} records"
+        return fig, f"✅ Top {len(df)} Warranty Claimed Parts"
         
     except requests.exceptions.ConnectionError:
         fig = create_bar_chart(pd.DataFrame())
@@ -384,24 +384,36 @@ def fetch_top_parts(limit, from_date, to_date):
         return fig, f"❌ Error: {str(e)}"
 
 
-def fetch_parts_by_bike_model(limit, months, years, bike_model: str):
+def fetch_parts_by_bike_model(limit, bike_model: str, from_date, to_date):
     """Fetch top warranty parts for a specific bike model from the API."""
     try:
         # Check if bike_model is provided (required)
         if not bike_model:
             fig = create_bar_chart(pd.DataFrame())
             return fig, "⚠️ Please select a bike model first"
+
+        # Convert dates to string format YYYY-MM-DD
+        from_date_str = convert_date_to_string(from_date)
+        to_date_str = convert_date_to_string(to_date)
+
+        # from_date is REQUIRED by the API
+        if not from_date_str:
+            fig = create_bar_chart(pd.DataFrame())
+            return fig, "⚠️ Please select a From Date (required)"
         
         # Start with required parameter
         params = {"bike_model": bike_model.strip()}
         
         # Add optional parameters only if they have valid values (not None, not empty, not 0)
-        if limit is not None and limit != "" and limit > 0:
+        if limit is not None and limit != "" and limit != 0:
             params["limit"] = int(limit)
-        if months is not None and months != "" and months > 0:
-            params["months"] = int(months)
-        if years is not None and years != "" and years > 0:
-            params["years"] = int(years)
+
+        # Add dates as strings (YYYY-MM-DD format)
+        params["from_date"] = from_date_str
+
+        # to_date is optional (API defaults to today)
+        if to_date_str:
+            params["to_date"] = to_date_str
         
         response = requests.get(API_URL_BIKE_MODEL, params=params, timeout=30)
         response.raise_for_status()
@@ -429,7 +441,7 @@ def fetch_parts_by_bike_model(limit, months, years, bike_model: str):
         chart_title = f"Top Parts for {bike_model}" if bike_model else "Top Parts by Bike Model"
         fig = create_bar_chart(df, chart_title)
         
-        return fig, f"✅ Successfully fetched {len(df)} records for {bike_model}"
+        return fig, f"✅ Top {len(df)} Warranty ClaimedParts for {bike_model}"
         
     except requests.exceptions.ConnectionError:
         fig = create_bar_chart(pd.DataFrame())
@@ -667,6 +679,28 @@ custom_css = """
     border-color: var(--status-border) !important;
 }
 
+/* DateTime (calendar) inputs: force white background instead of dark */
+.date-input input,
+.date-input textarea,
+.date-input [role="textbox"],
+.date-input [role="combobox"] {
+    background: #ffffff !important;
+    color: var(--text-primary) !important;
+}
+
+/* Calendar button area */
+.date-input button,
+.date-input [role="button"] {
+    background: #ffffff !important;
+    color: var(--text-primary) !important;
+}
+
+.date-input button svg,
+.date-input [role="button"] svg {
+    color: var(--text-primary) !important;
+    fill: currentColor !important;
+}
+
 /* Tabs + headings text colors */
 .gradio-container h1,
 .gradio-container h2,
@@ -749,13 +783,15 @@ with gr.Blocks() as app:
                     from_date_input_1 = gr.DateTime(
                         label="📅 From Date (Required)",
                         include_time=False,
-                        info="Start date - REQUIRED"
+                        info="Start date - REQUIRED",
+                        elem_classes=["date-input"]
                     )
                     
                     to_date_input_1 = gr.DateTime(
                         label="📅 To Date (Optional)",
                         include_time=False,
-                        info="End date - defaults to today if empty"
+                        info="End date - defaults to today if empty",
+                        elem_classes=["date-input"]
                     )
                     
                     fetch_btn_1 = gr.Button("🚀 Fetch Data", variant="primary", size="lg")
@@ -798,19 +834,19 @@ with gr.Blocks() as app:
                         step=1,
                         info="Number of records to fetch (leave empty for default)"
                     )
-                    
-                    months_input_2 = gr.Number(
-                        label="📅 Months (optional)",
-                        value=None,
-                        step=1,
-                        info="Month filter 1-12 (leave empty for default)"
+
+                    from_date_input_2 = gr.DateTime(
+                        label="📅 From Date (Required)",
+                        include_time=False,
+                        info="Start date - REQUIRED",
+                        elem_classes=["date-input"]
                     )
-                    
-                    years_input_2 = gr.Number(
-                        label="📆 Years (optional)",
-                        value=None,
-                        step=1,
-                        info="Last X years (leave empty for default)"
+
+                    to_date_input_2 = gr.DateTime(
+                        label="📅 To Date (Optional)",
+                        include_time=False,
+                        info="End date - defaults to today if empty",
+                        elem_classes=["date-input"]
                     )
                     
                     bike_dropdown = gr.Dropdown(
@@ -839,17 +875,16 @@ with gr.Blocks() as app:
             # Connect the button to the function
             fetch_btn_2.click(
                 fn=fetch_parts_by_bike_model,
-                inputs=[limit_input_2, months_input_2, years_input_2, bike_dropdown],
+                inputs=[limit_input_2, bike_dropdown, from_date_input_2, to_date_input_2],
                 outputs=[results_chart_2, status_output_2]
             )
             
-            # Also trigger on Enter key for number inputs
-            for input_component in [limit_input_2, months_input_2, years_input_2]:
-                input_component.submit(
-                    fn=fetch_parts_by_bike_model,
-                    inputs=[limit_input_2, months_input_2, years_input_2, bike_dropdown],
-                    outputs=[results_chart_2, status_output_2]
-                )
+            # Also trigger on Enter key for limit input
+            limit_input_2.submit(
+                fn=fetch_parts_by_bike_model,
+                inputs=[limit_input_2, bike_dropdown, from_date_input_2, to_date_input_2],
+                outputs=[results_chart_2, status_output_2]
+            )
 
 
 if __name__ == "__main__":
