@@ -167,11 +167,39 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
     
     if not value_col:
         return None
-    
-    labels = df[label_col].astype(str).tolist() if label_col else df.index.astype(str).tolist()
-    values = df[value_col].tolist()
-    bar_text = [str(v) for v in values]  # Display claimcount values on bars
-    partcodes = df[code_col].astype(str).tolist() if code_col else labels  # For hover
+
+    # ---- Aggregate by part name (label) so multiple partCodes for the same partName are summed ----
+    work_df = df.copy()
+    if label_col:
+        work_df[label_col] = work_df[label_col].astype(str)
+    if code_col:
+        work_df[code_col] = work_df[code_col].astype(str)
+
+    # Ensure numeric values for sorting/gradient
+    work_df[value_col] = pd.to_numeric(work_df[value_col], errors="coerce").fillna(0)
+
+    # If we have both a label and a code column, aggregate total claim count per label (part name)
+    # and keep a comma-separated list of unique part codes for hover.
+    if label_col and code_col and label_col != code_col:
+        agg = (
+            work_df.groupby(label_col, as_index=False)
+            .agg(
+                **{
+                    value_col: (value_col, "sum"),
+                    "__partcodes": (code_col, lambda s: ", ".join(dict.fromkeys([x for x in s.tolist() if x]))),
+                }
+            )
+        )
+        work_df = agg
+        code_col = "__partcodes"
+
+    # Sort by total claim count (descending); we will reverse later for horizontal top-to-bottom display
+    work_df = work_df.sort_values(by=value_col, ascending=False)
+
+    labels = work_df[label_col].astype(str).tolist() if label_col else work_df.index.astype(str).tolist()
+    values = work_df[value_col].tolist()
+    bar_text = [str(int(v)) if float(v).is_integer() else str(v) for v in values]  # Display values on bars
+    partcodes = work_df[code_col].astype(str).tolist() if code_col else labels  # For hover
     
     # Reverse for horizontal bar chart (top to bottom display)
     labels = labels[::-1]
@@ -246,7 +274,7 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
         insidetextanchor='end',
         textfont=dict(color=text_colors, size=12, family='Outfit, sans-serif'),
         customdata=partcodes,
-        hovertemplate='<b>Partcode: %{customdata}</b><br>Claim Count: %{x}<extra></extra>'
+        hovertemplate='<b>Partcode(s): %{customdata}</b><br>Total Claim Count: %{x}<extra></extra>'
     ))
     
     # Get the title from column names
