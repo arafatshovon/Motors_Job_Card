@@ -987,7 +987,21 @@ with gr.Blocks() as app:
             with gr.Row():
                 with gr.Column(scale=1):
                     gr.Markdown("### ⚙️ Query Parameters")
-                    
+
+                    from_date_input_1 = gr.DateTime(
+                        label="📅 From Date (Required)",
+                        include_time=False,
+                        info="Start date - REQUIRED",
+                        elem_classes=["date-input"]
+                    )
+
+                    to_date_input_1 = gr.DateTime(
+                        label="📅 To Date (Optional)",
+                        include_time=False,
+                        info="End date - defaults to today if empty",
+                        elem_classes=["date-input"]
+                    )
+
                     limit_input_1 = gr.Number(
                         label="📊 Limit",
                         value=None,
@@ -995,20 +1009,6 @@ with gr.Blocks() as app:
                         # maximum=1000,
                         step=1,
                         info="Number of records to fetch"
-                    )
-                    
-                    from_date_input_1 = gr.DateTime(
-                        label="📅 From Date (Required)",
-                        include_time=False,
-                        info="Start date - REQUIRED",
-                        elem_classes=["date-input"]
-                    )
-                    
-                    to_date_input_1 = gr.DateTime(
-                        label="📅 To Date (Optional)",
-                        include_time=False,
-                        info="End date - defaults to today if empty",
-                        elem_classes=["date-input"]
                     )
                     
                     fetch_btn_1 = gr.Button("🚀 Fetch Data", variant="primary", size="lg")
@@ -1044,13 +1044,6 @@ with gr.Blocks() as app:
             with gr.Row():
                 with gr.Column(scale=1):
                     gr.Markdown("### ⚙️ Query Parameters")
-                    
-                    limit_input_2 = gr.Number(
-                        label="📊 Limit (optional)",
-                        value=None,
-                        step=1,
-                        info="Number of records to fetch (leave empty for default)"
-                    )
 
                     from_date_input_2 = gr.DateTime(
                         label="📅 From Date (Required)",
@@ -1065,7 +1058,14 @@ with gr.Blocks() as app:
                         info="End date - defaults to today if empty",
                         elem_classes=["date-input"]
                     )
-                    
+
+                    limit_input_2 = gr.Number(
+                        label="📊 Limit (optional)",
+                        value=None,
+                        step=1,
+                        info="Number of records to fetch (leave empty for default)"
+                    )
+
                     bike_dropdown = gr.Dropdown(
                         choices=ALL_BIKE_NAMES,
                         label="🏍️ Select Bike Model",
