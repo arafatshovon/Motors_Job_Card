@@ -567,15 +567,18 @@ class DBManager:
         """
         Live query to SQL Server: parts failure ratio by bike model.
 
-        Failure ratio definition (as provided):
-          TotalPartsClaimed / TotalBikeSold
+        Failure ratio definition (updated):
+          TotalFailedChassis / TotalBikeSold
+
+        Where:
+          TotalFailedChassis = count of DISTINCT chassis numbers that had at least one claimed part.
 
         Output:
           [{
             'bikeCode': '...',
             'bikeName': '...',
             'totalBikeSold': 123,
-            'totalPartsClaimed': 45,
+            'totalFailedChassis': 45,
             'partsFailureRatio': 0.36585
           }, ...]
         """
@@ -600,11 +603,11 @@ class DBManager:
                     BP.ProductCode,
                     BP.ProductName
             ),
-            PartsClaimed AS (
+            FailedChassis AS (
                 SELECT
                     BP.ProductCode AS BikeCode,
                     BP.ProductName AS BikeName,
-                    COUNT(*) AS TotalPartsClaimed
+                    COUNT(DISTINCT DWC.ChassisNo) AS TotalFailedChassis
                 FROM DealarWarrantyClaim DWC
                 INNER JOIN DealarWarrantyClaimProduct DWCP
                     ON DWC.DCWarrantyId = DWCP.DCWarrantyId
@@ -621,16 +624,16 @@ class DBManager:
                 BS.BikeCode,
                 BS.BikeName,
                 BS.TotalBikeSold,
-                ISNULL(PC.TotalPartsClaimed, 0) AS TotalPartsClaimed,
+                ISNULL(FC.TotalFailedChassis, 0) AS TotalFailedChassis,
                 (
-                    CAST(ISNULL(PC.TotalPartsClaimed, 0) AS FLOAT)
+                    CAST(ISNULL(FC.TotalFailedChassis, 0) AS FLOAT)
                     / NULLIF(BS.TotalBikeSold, 0)
                 ) AS PartsFailureRatio
             FROM BikeSold BS
-            LEFT JOIN PartsClaimed PC
-                ON BS.BikeCode = PC.BikeCode
+            LEFT JOIN FailedChassis FC
+                ON BS.BikeCode = FC.BikeCode
             WHERE (
-                CAST(ISNULL(PC.TotalPartsClaimed, 0) AS FLOAT)
+                CAST(ISNULL(FC.TotalFailedChassis, 0) AS FLOAT)
                 / NULLIF(BS.TotalBikeSold, 0)
             ) != 0
             ORDER BY PartsFailureRatio DESC;
@@ -655,7 +658,7 @@ class DBManager:
                             "bikeCode": None if r[0] is None else str(r[0]),
                             "bikeName": None if r[1] is None else str(r[1]),
                             "totalBikeSold": int(r[2] or 0),
-                            "totalPartsClaimed": int(r[3] or 0),
+                            "totalFailedChassis": int(r[3] or 0),
                             "partsFailureRatio": None if r[4] is None else float(r[4]),
                         }
                     )

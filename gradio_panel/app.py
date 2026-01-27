@@ -314,7 +314,8 @@ def aggregate_failure_ratio_by_group(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     work_df = df.copy()
-    for col in ["bikeName", "bikeCode", "totalBikeSold", "totalPartsClaimed", "partsFailureRatio"]:
+    # API may return either totalFailedChassis (new) or totalPartsClaimed (old)
+    for col in ["bikeName", "bikeCode", "totalBikeSold", "totalFailedChassis", "totalPartsClaimed", "partsFailureRatio"]:
         if col not in work_df.columns:
             alt = next((c for c in work_df.columns if c.lower() == col.lower()), None)
             if alt:
@@ -329,7 +330,11 @@ def aggregate_failure_ratio_by_group(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     work_df["totalBikeSold"] = pd.to_numeric(work_df.get("totalBikeSold", 0), errors="coerce").fillna(0)
-    work_df["totalPartsClaimed"] = pd.to_numeric(work_df.get("totalPartsClaimed", 0), errors="coerce").fillna(0)
+    # Prefer new numerator if present; otherwise fall back to old field.
+    if "totalFailedChassis" in work_df.columns:
+        work_df["totalFailedChassis"] = pd.to_numeric(work_df.get("totalFailedChassis", 0), errors="coerce").fillna(0)
+    else:
+        work_df["totalFailedChassis"] = pd.to_numeric(work_df.get("totalPartsClaimed", 0), errors="coerce").fillna(0)
 
     def _join_unique(values):
         cleaned = [str(v).strip() for v in values if str(v).strip()]
@@ -340,11 +345,11 @@ def aggregate_failure_ratio_by_group(df: pd.DataFrame) -> pd.DataFrame:
         .agg(
             bikeCode=("bikeCode", _join_unique),
             totalBikeSold=("totalBikeSold", "sum"),
-            totalPartsClaimed=("totalPartsClaimed", "sum"),
+            totalFailedChassis=("totalFailedChassis", "sum"),
         )
     )
     aggregated["partsFailureRatio"] = aggregated.apply(
-        lambda row: (row["totalPartsClaimed"] / row["totalBikeSold"]) if row["totalBikeSold"] else 0.0,
+        lambda row: (row["totalFailedChassis"] / row["totalBikeSold"]) if row["totalBikeSold"] else 0.0,
         axis=1,
     )
     aggregated["bikeName"] = aggregated["__group_key"]
@@ -818,7 +823,7 @@ def create_failure_ratio_chart(df: pd.DataFrame, title: str = "Bike Model Failur
 
     # Normalize expected columns (API returns camelCase)
     work_df = df.copy()
-    for col in ["bikeName", "bikeCode", "totalBikeSold", "totalPartsClaimed", "partsFailureRatio"]:
+    for col in ["bikeName", "bikeCode", "totalBikeSold", "totalFailedChassis", "totalPartsClaimed", "partsFailureRatio"]:
         if col not in work_df.columns:
             # Allow some flexibility if keys differ
             alt = next((c for c in work_df.columns if c.lower() == col.lower()), None)
@@ -830,9 +835,15 @@ def create_failure_ratio_chart(df: pd.DataFrame, title: str = "Bike Model Failur
 
     work_df["partsFailureRatio"] = pd.to_numeric(work_df["partsFailureRatio"], errors="coerce").fillna(0.0)
     work_df["totalBikeSold"] = pd.to_numeric(work_df.get("totalBikeSold", 0), errors="coerce").fillna(0).astype(int)
-    work_df["totalPartsClaimed"] = (
-        pd.to_numeric(work_df.get("totalPartsClaimed", 0), errors="coerce").fillna(0).astype(int)
-    )
+    # Prefer new numerator if present; otherwise fall back to old field.
+    if "totalFailedChassis" in work_df.columns:
+        work_df["totalFailedChassis"] = (
+            pd.to_numeric(work_df.get("totalFailedChassis", 0), errors="coerce").fillna(0).astype(int)
+        )
+    else:
+        work_df["totalFailedChassis"] = (
+            pd.to_numeric(work_df.get("totalPartsClaimed", 0), errors="coerce").fillna(0).astype(int)
+        )
 
     # Sort by failure ratio (descending); we will reverse later for horizontal top-to-bottom display.
     work_df = work_df.sort_values(by="partsFailureRatio", ascending=False)
@@ -847,7 +858,7 @@ def create_failure_ratio_chart(df: pd.DataFrame, title: str = "Bike Model Failur
     # Hover details (aligned with reversed labels/values)
     bike_codes = work_df.get("bikeCode", pd.Series([""] * len(work_df))).astype(str).tolist()[::-1]
     sold = work_df.get("totalBikeSold", pd.Series([0] * len(work_df))).astype(int).tolist()[::-1]
-    claimed = work_df.get("totalPartsClaimed", pd.Series([0] * len(work_df))).astype(int).tolist()[::-1]
+    failed_chassis = work_df.get("totalFailedChassis", pd.Series([0] * len(work_df))).astype(int).tolist()[::-1]
 
     # Gradient colors top-to-bottom: red -> yellow -> green
     # Since we sort desc (top = highest ratio), mapping by value gives the desired visual.
@@ -895,7 +906,7 @@ def create_failure_ratio_chart(df: pd.DataFrame, title: str = "Bike Model Failur
     # Display as percentage for readability
     bar_text = [f"{(v * 100.0):.2f}%" for v in values]
 
-    customdata = list(zip(bike_codes, sold, claimed))
+    customdata = list(zip(bike_codes, sold, failed_chassis))
 
     fig = go.Figure()
     fig.add_trace(
@@ -914,7 +925,7 @@ def create_failure_ratio_chart(df: pd.DataFrame, title: str = "Bike Model Failur
                 "Bike Code: %{customdata[0]}<br>"
                 "Failure Ratio: %{x:.4f}<br>"
                 "Total Bike Sold: %{customdata[1]}<br>"
-                "Total Parts Claimed: %{customdata[2]}<extra></extra>"
+                "Total Failed Chassis: %{customdata[2]}<extra></extra>"
             ),
         )
     )
@@ -974,7 +985,7 @@ def fetch_failure_ratio(limit):
         aggregated_df = aggregate_failure_ratio_by_group(df)
         fig = create_failure_ratio_chart(
             aggregated_df,
-            "Bike Model Failure Ratio (Parts Claimed / Bikes Sold)",
+            "Bike Model Failure Ratio (Unique Failed Chassis / Bikes Sold)",
         )
         return fig, f"✅ Loaded {len(aggregated_df)} bike models"
 
