@@ -453,10 +453,10 @@ class DBManager:
         to_date: Optional[date] = None,
     ) -> List[dict]:
         """
-        Live query to SQL Server: returns top N parts (by claim count) for a single bike model.
+        Live query to SQL Server: returns top N parts (by claim count) for matching bike models.
 
         Args:
-          bike_model: Product BP.ProductName (bike model name)
+          bike_model: Bike model prefix (matched with LIKE @bike_model + '%')
           limit: top N parts (1..200)
           from_date: start date (inclusive)
           to_date: end date (inclusive). Defaults to today's date if not provided.
@@ -505,9 +505,9 @@ class DBManager:
                 INNER JOIN Product BP
                     ON DID.ProductCode = BP.ProductCode
                 WHERE DWC2.Status = 1
-                  AND BP.ProductName = @bike_model
-                   AND DWC2.WCDate >= @from_date
-                   AND DWC2.WCDate < DATEADD(day, 1, @to_date)
+                  AND BP.ProductName LIKE @bike_model + '%'
+                  AND DWC2.WCDate >= @from_date
+                  AND DWC2.WCDate < DATEADD(DAY, 1, @to_date)
                 GROUP BY
                     BP.ProductName,
                     ISNULL(P2.PartNo, OP2.SMSCode),
@@ -518,7 +518,9 @@ class DBManager:
                 PartCode,
                 PartName,
                 ClaimCount,
-                ROW_NUMBER() OVER (ORDER BY ClaimCount DESC, PartCode ASC) AS PartRank
+                ROW_NUMBER() OVER (
+                    ORDER BY ClaimCount DESC, PartCode ASC
+                ) AS PartRank
             FROM Agg
             ORDER BY ClaimCount DESC, PartCode ASC;
         """
@@ -530,6 +532,7 @@ class DBManager:
         while retries < max_retries:
             try:
                 cursor = self.connection.cursor()
+                # SQL applies prefix wildcard via: LIKE @bike_model + '%'
                 cursor.execute(sql, (limit, from_date, to_date, bike_model_str))
                 rows = cursor.fetchall()
                 cursor.close()

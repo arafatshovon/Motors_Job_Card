@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 import plotly.graph_objects as go
 import os
+import json
 
 
 API_HOST = os.environ.get("API_HOST", "0.0.0.0")
@@ -12,87 +13,348 @@ API_BASE_URL = f"http://{API_HOST}:{API_PORT}"
 API_URL_TOP_PARTS = f"{API_BASE_URL}/api/warranty/top-parts"
 API_URL_BIKE_MODEL = f"{API_BASE_URL}/api/warranty/top-parts/for-bike-model"
 API_URL_FAILURE_RATIO = f"{API_BASE_URL}/api/warranty/failure-ratio/by-bike-model"
-API_URL_BIKE_NAMES = f"{API_BASE_URL}/api/bikes/names"
 
 # API_URL_TOP_PARTS = "http://0.0.0.0:9001/api/warranty/top-parts"
 # API_URL_BIKE_MODEL = "http://0.0.0.0:9001/api/warranty/top-parts/for-bike-model"
-# API_URL_BIKE_NAMES = "http://0.0.0.0:9001/api/bikes/names"
 
-# Global list to store all bike names (fetched once at startup)
-ALL_BIKE_NAMES = []
+# Bike model grouping config (used to aggregate similar models)
+# NOTE: In Docker, cwd and layout can differ. We resolve the path from a set of common candidates.
+def resolve_bike_model_groups_path() -> str:
+    env_path = os.environ.get("BIKE_MODEL_GROUPS_PATH")
+    here = os.path.dirname(__file__)
+    cwd = os.getcwd()
+
+    candidates = [
+        env_path,
+        # repo layout (gradio_panel/ at repo root, config at app/config/)
+        os.path.join(here, "..", "app", "config", "bike_model_groups.json"),
+        # container layout where WORKDIR is /app and config is /app/config/
+        os.path.join(cwd, "config", "bike_model_groups.json"),
+        os.path.join(cwd, "app", "config", "bike_model_groups.json"),
+        "/app/config/bike_model_groups.json",
+        "/app/app/config/bike_model_groups.json",
+    ]
+
+    for p in candidates:
+        if not p:
+            continue
+        if os.path.exists(p):
+            return os.path.abspath(p)
+
+    # If nothing exists, return the first non-empty candidate (for clearer log messages)
+    for p in candidates:
+        if p:
+            return os.path.abspath(p)
+    return "bike_model_groups.json"
 
 
-def fetch_all_bikes():
-    """Fetch all bike names from API once at startup."""
-    global ALL_BIKE_NAMES
+BIKE_MODEL_GROUPS_PATH = resolve_bike_model_groups_path()
+
+# Fallback config: used if the JSON file isn't present inside the container.
+# This is copied from app/config/bike_model_groups.json so the dropdown can still render keys.
+BIKE_MODEL_GROUPS_FALLBACK = {
+    "Aerox155": [
+        "Aerox155 Grey Vermillion PGD",
+        "Aerox155 Metallic Black SMX",
+        "Aerox155 Racing Blue DPBMY",
+        "Aerox155 Silver WMC",
+    ],
+    "Alpha": ["Alpha Marble Black"],
+    "FAZER FI V 2.0": [
+        "FAZER FI V 2.0 Marble White 2WS300BWC1",
+        "FAZER FI V 2.0 Ravine Black 2WS200SMX",
+    ],
+    "FZ V3": ["FZ V3 Metric Black SMX", "FZ V3 Racing Blue DPBMY"],
+    "FZ-X": [
+        "FZ-X (BYJ1) Dark Matt Blue MFG",
+        "FZ-X (BYJ1) Matt Black MFG",
+        "FZ-X (BYJ1) Matt Copper MFG",
+        "FZ-X (BYJ1) Matt Titan MFG",
+        "FZ-X (Matt Copper)",
+        "FZ-X (Metallic Blue)",
+        "FZ-X Matt Black MBL2",
+        "FZ-X Matt Copper MDOM3",
+        "FZ-X Metallic Blue BMC",
+    ],
+    "FZ25": ["FZ25 (250CC)"],
+    "FZN 250": ["FZN 250 (DF81) Black", "FZN 250 (DF81) Racing Blue", "FZN 250 (DF81) White"],
+    "FZS DD": [
+        "FZS DD Armada Blue CKD",
+        "FZS DD Armada Blue MFG",
+        "FZS DD Black Metallic MFG",
+        "FZS DD Dark knight MFG",
+        "FZS DD Dark Night CKD",
+        "FZS DD Grey Metallic MFG",
+        "FZS DD Matt Green CKD",
+        "FZS DD Matt Grey Metallic MFG",
+    ],
+    "FZS FI V 2.0": [
+        "FZS FI V 2.0 (SE) Matt Green 2GS300MBL2",
+        "FZS FI V 2.0 (SE) Matt Green 2GS700MBL2",
+        "FZS FI V 2.0 Hurricane Grey 2GS600MNM3",
+        "FZS FI V 2.0 Knight Red 2GS600MDRM4",
+        "FZS FI V 2.0 Lighting Cyan 2GS600CM6",
+        "FZS FI V 2.0 Opal White 2GS600BWC1",
+        "FZS FI V 2.0 Viper Black 2GS400SMX",
+    ],
+    "FZS V-2.0 DD": ["FZS V-2.0 DD Armada Blue MDPBM1"],
+    "FZS V2": ["Fzs DD V2.0 Dark Knight", "Fzs DD V2.0 Matt Green", "FZS v2-Dark Night 2GS900010A MBL2"],
+    "FZS V3": [
+        "FZS V3 (BDY5) Dark Matt Blue",
+        "FZS V3 (BDY5) Matt Red",
+        "FZS V3 (BDY6) Majesty Red",
+        "FZS V3 (BDY6) Metallic Black",
+        "FZS V3 (BDY6) Metallic Grey",
+        "FZS V3 Dark Matt Blue MDPBM1",
+        "FZS V3 Gray & Cyan Blue MNM3",
+        "FZS V3 Matt Black MBL2",
+    ],
+    "FZS V3.0": [
+        "FZS V3.0 Dark Matt Blue CKD",
+        "FZS V3.0 Dark Matt Blue MFG",
+        "FZS V3.0 Dark Matt Blue MFG (MDPBM1)",
+        "FZS V3.0 Grey & Cyan Blue CKD",
+        "FZS V3.0 Matt Black CKD",
+        "FZS V3.0 Matt Black MFG",
+        "FZS V3.0 Matt Black MFG (MBL2)",
+        "FZS V3.0 Matt Red MFG",
+        "FZS V3.0 Metallic Red CKD",
+        "FZS V3.0 Metallic Red MFG",
+        "FZS V3.0 Vintage Green MFG",
+        "FZS V3.0 White CKD",
+    ],
+    "FZS V4": [
+        "FZS V4 (DE91) Dark Matt Blue",
+        "FZS V4 (DE91) Matt Black",
+        "FZS V4 (DE92) Ice Fluo Vermillion",
+        "FZS V4 (DE92) Majesty Red",
+        "FZS V4 (DE92) Matt Black",
+        "FZS V4 (DE92) Metallic Grey",
+        "FZS V4 (DE92) Racing Blue",
+        "FZS V4 (DE92) Sparkle Green",
+    ],
+    "Fascino": ["Fascino Unite White"],
+    "Fazer": ["Fazer Burning Red VRC1", "Fazer Midnight Black SMX"],
+    "Fazer FZH150": ["Fazer FZH150 (DH21) Black", "Fazer FZH150 (DH21) Blue", "Fazer FZH150 (DH21) Red"],
+    "MT 15": ["MT 15 ABS India Black SMX", "MT 15 ABS India Blue MDPBM1"],
+    "MT15 V2": [
+        "MT15 V2 Cyan Storm PGD",
+        "MT15 V2 Ice Fluo Vermillion MLNM4",
+        "MT15 V2 Metallic Black SMX",
+        "MT15 V2 Racing Blue DPBMY",
+    ],
+    "N Max": ["N Max Scooter Grey MNM3"],
+    "Other": ["FUEL PUMP COMP."],
+    "R15 V3": ["R15 V3 Dark Knight MBL2", "R15 V3 MotoGP SMX", "R15 V3 Racing Blue DPBMY", "R15 V3 Thunder Grey MNM3"],
+    "R15 V3.0": ["R15 V3.0 Black SMX", "R15 V3.0 Blue DPBMC", "R15 V3.0 Movistar DPBMC", "R15 V3.0 Yellow YM6"],
+    "R15 V4": ["R15 V4 (BPDF00) Intensity White", "R15 V4 Dark Knight LGB", "R15 V4 Metallic Red VRC1", "R15 V4 Racing Blue DPBMY"],
+    "R15M": ["R15M (BPDD00) Metallic Grey", "R15M (Metallic Grey BPDD00)", "R15M (Metallic Grey)", "R15M Metallic Grey WMC"],
+    "Ray ZR": [
+        "Ray ZR SR 125 FI Blue DPBMY",
+        "Ray ZR SR 125 FI Green NHG",
+        "Ray ZR SR Blue DPBMY",
+        "Ray ZR Street Rally (Red) B2V1000-010A M",
+    ],
+    "RayZR Street Rally": ["RayZR Street Rally-DPBMY(Blue)", "RayZR Street Rally-MNM3(Red/Gray)"],
+    "SALUTO Disc": [
+        "SALUTO (Disc) Glory Green 2LP800YB",
+        "SALUTO (Disc) Matt Green 2LPB00MBL2",
+        "SALUTO (Disc) Smoky Black 2LP800MNM3",
+        "SALUTO (Disc) Sparky Cyan 2LP800CM6",
+        "Saluto Disc AB MFG",
+        "Saluto Disc MG CKD",
+        "Saluto Disc MG MFG",
+        "Saluto Disc SC CKD",
+        "Saluto Disc SC MFG",
+    ],
+    "SALUTO Drum": ["SALUTO (Drum) Victory Red 2LP400DRMK", "SALUTO (Drum) Victory Red 2LP500DRMK"],
+    "SZRR": ["SZRR (SE) Matt Green 2PY500MBL2", "SZRR Beast Black 2PY400SMX", "SZRR Predator Cyan 2PY400CM6"],
+    "Saluto": [
+        "Saluto UBS Armada Blue MFG",
+        "Saluto UBS Dark Purplish Blue MFG",
+        "Saluto UBS Matt Black MFG",
+        "Saluto UBS Pastel Dark Grey MFG",
+        "Saluto UBS Sparkle Green MFG",
+    ],
+    "XSR155": ["XSR155 (Matt Black)", "XSR155 (Matt Green Metallic)", "XSR155 (Radical White)", "XSR155 (White Metallic)"],
+}
+
+BIKE_MODEL_GROUPS = {}
+BIKE_MODEL_GROUP_LOOKUP = {}
+BIKE_MODEL_GROUP_KEYS = []
+# Simple list of bike model names (top-level JSON keys) for the dropdown
+BIKE_MODEL_KEY_CHOICES = []
+
+
+def load_bike_model_key_choices():
+    """Load dropdown bike model keys from the JSON config (top-level keys)."""
+    global BIKE_MODEL_KEY_CHOICES
     try:
-        print("Fetching all bike names from API...")
-        response = requests.get(API_URL_BIKE_NAMES, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        
-        bike_names = []
-        
-        # Handle different response formats
-        if isinstance(data, list):
-            if data and isinstance(data[0], str):
-                bike_names = data
-            elif data and isinstance(data[0], dict):
-                for field in ['bikeName', 'bike_name', 'name', 'model', 'title']:
-                    if field in data[0]:
-                        bike_names = [str(item[field]) for item in data if field in item]
-                        break
-        elif isinstance(data, dict):
-            if data.get("ret") == True and "data" in data:
-                inner_data = data["data"]
-                if isinstance(inner_data, list):
-                    if inner_data and isinstance(inner_data[0], str):
-                        bike_names = inner_data
-                    elif inner_data and isinstance(inner_data[0], dict):
-                        for field in ['bikeName', 'bike_name', 'name', 'model']:
-                            if field in inner_data[0]:
-                                bike_names = [str(item[field]) for item in inner_data if field in item]
-                                break
-                elif isinstance(inner_data, dict) and "items" in inner_data:
-                    items = inner_data["items"]
-                    for field in ['bikeName', 'bike_name', 'name', 'model']:
-                        if items and field in items[0]:
-                            bike_names = [str(item[field]) for item in items if field in item]
-                            break
-            else:
-                for key in ["data", "results", "items", "names", "bikes"]:
-                    if key in data and isinstance(data[key], list):
-                        items = data[key]
-                        if items and isinstance(items[0], str):
-                            bike_names = items
-                        elif items and isinstance(items[0], dict):
-                            for field in ['bikeName', 'bike_name', 'name', 'model']:
-                                if field in items[0]:
-                                    bike_names = [str(item[field]) for item in items if field in item]
-                                    break
-                        break
-        
-        ALL_BIKE_NAMES = bike_names
-        print(f"✅ Loaded {len(ALL_BIKE_NAMES)} bike names")
-        return ALL_BIKE_NAMES
-        
+        with open(BIKE_MODEL_GROUPS_PATH, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        if not isinstance(data, dict):
+            print(f"⚠️ bike_model_groups.json is not a JSON object: {BIKE_MODEL_GROUPS_PATH}")
+            data = BIKE_MODEL_GROUPS_FALLBACK
+
+        keys = [str(k).strip() for k in data.keys()]
+        keys = [k for k in keys if k]
+        keys = sorted(keys, key=lambda s: s.lower())
+        BIKE_MODEL_KEY_CHOICES = keys
+
+        # Debug print so you can verify keys are present in runtime logs
+        preview = ", ".join(keys[:25])
+        more = "" if len(keys) <= 25 else f" ... (+{len(keys) - 25} more)"
+        print(f"✅ Loaded {len(keys)} bike model keys from {BIKE_MODEL_GROUPS_PATH}: {preview}{more}")
+        return BIKE_MODEL_KEY_CHOICES
+    except FileNotFoundError:
+        # Docker/mount issue: fallback so UI still works.
+        keys = sorted(BIKE_MODEL_GROUPS_FALLBACK.keys(), key=lambda s: str(s).lower())
+        BIKE_MODEL_KEY_CHOICES = keys
+        preview = ", ".join(keys[:25])
+        more = "" if len(keys) <= 25 else f" ... (+{len(keys) - 25} more)"
+        print(
+            f"⚠️ Bike model groups file not found: {BIKE_MODEL_GROUPS_PATH}. "
+            f"Using fallback keys ({len(keys)}): {preview}{more}"
+        )
+        return BIKE_MODEL_KEY_CHOICES
     except Exception as e:
-        print(f"❌ Error fetching bike names: {e}")
-        return []
+        print(f"⚠️ Failed to load bike model keys: {e} (path: {BIKE_MODEL_GROUPS_PATH})")
+
+    BIKE_MODEL_KEY_CHOICES = []
+    return BIKE_MODEL_KEY_CHOICES
 
 
-# Fetch all bikes at startup with delay for Docker (API needs time to start)
-import time
-print("Waiting for API to be ready...")
-time.sleep(5)  # Wait 5 seconds for API to be ready
+def load_bike_model_groups():
+    """Load bike model groups and build a reverse lookup."""
+    global BIKE_MODEL_GROUPS, BIKE_MODEL_GROUP_LOOKUP, BIKE_MODEL_GROUP_KEYS
+    groups = {}
+    lookup = {}
+    try:
+        with open(BIKE_MODEL_GROUPS_PATH, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        if not isinstance(data, dict):
+            data = BIKE_MODEL_GROUPS_FALLBACK
 
-# Try to fetch with retries
-for attempt in range(3):
-    result = fetch_all_bikes()
-    if result:
-        break
-    print(f"Retry {attempt + 1}/3...")
-    time.sleep(2)
+        for group_key, model_list in data.items():
+            key = str(group_key).strip()
+            if not key:
+                continue
+            lookup[key] = key
+            cleaned_models = []
+            if isinstance(model_list, list):
+                for model_name in model_list:
+                    model = str(model_name).strip()
+                    if not model:
+                        continue
+                    cleaned_models.append(model)
+                    lookup[model] = key
+            groups[key] = cleaned_models
+    except FileNotFoundError:
+        print(f"⚠️ Bike model groups file not found: {BIKE_MODEL_GROUPS_PATH} (using fallback groups)")
+        data = BIKE_MODEL_GROUPS_FALLBACK
+        for group_key, model_list in data.items():
+            key = str(group_key).strip()
+            if not key:
+                continue
+            lookup[key] = key
+            cleaned_models = []
+            if isinstance(model_list, list):
+                for model_name in model_list:
+                    model = str(model_name).strip()
+                    if not model:
+                        continue
+                    cleaned_models.append(model)
+                    lookup[model] = key
+            groups[key] = cleaned_models
+    except Exception as e:
+        print(f"⚠️ Failed to load bike model groups: {e}")
+
+    BIKE_MODEL_GROUPS = groups
+    BIKE_MODEL_GROUP_LOOKUP = lookup
+    BIKE_MODEL_GROUP_KEYS = sorted(BIKE_MODEL_GROUPS.keys(), key=lambda s: str(s).lower())
+    return BIKE_MODEL_GROUPS
+
+
+def resolve_bike_model_group(bike_model: str):
+    """Resolve a bike model into its group key and list of models."""
+    if not bike_model:
+        return None, []
+    name = bike_model.strip()
+    if not name:
+        return None, []
+
+    if name in BIKE_MODEL_GROUPS:
+        group_key = name
+        models = BIKE_MODEL_GROUPS.get(group_key, [])
+    else:
+        group_key = BIKE_MODEL_GROUP_LOOKUP.get(name, name)
+        models = BIKE_MODEL_GROUPS.get(group_key, [name])
+
+    # Ensure unique models while preserving order
+    seen = set()
+    unique_models = []
+    for model in models:
+        if model not in seen:
+            unique_models.append(model)
+            seen.add(model)
+
+    return group_key, unique_models
+
+
+def get_bike_model_choices():
+    """Return bike model names for the dropdown (JSON top-level keys)."""
+    if not BIKE_MODEL_KEY_CHOICES:
+        load_bike_model_key_choices()
+    return BIKE_MODEL_KEY_CHOICES or []
+
+
+def aggregate_failure_ratio_by_group(df: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate failure ratio data by bike model group."""
+    if df is None or df.empty or not BIKE_MODEL_GROUP_LOOKUP:
+        return df
+
+    work_df = df.copy()
+    for col in ["bikeName", "bikeCode", "totalBikeSold", "totalPartsClaimed", "partsFailureRatio"]:
+        if col not in work_df.columns:
+            alt = next((c for c in work_df.columns if c.lower() == col.lower()), None)
+            if alt:
+                work_df[col] = work_df[alt]
+
+    if "bikeName" not in work_df.columns:
+        return df
+
+    work_df["bikeName"] = work_df["bikeName"].astype(str)
+    work_df["__group_key"] = work_df["bikeName"].map(
+        lambda name: BIKE_MODEL_GROUP_LOOKUP.get(name, name)
+    )
+
+    work_df["totalBikeSold"] = pd.to_numeric(work_df.get("totalBikeSold", 0), errors="coerce").fillna(0)
+    work_df["totalPartsClaimed"] = pd.to_numeric(work_df.get("totalPartsClaimed", 0), errors="coerce").fillna(0)
+
+    def _join_unique(values):
+        cleaned = [str(v).strip() for v in values if str(v).strip()]
+        return ", ".join(dict.fromkeys(cleaned))
+
+    aggregated = (
+        work_df.groupby("__group_key", as_index=False)
+        .agg(
+            bikeCode=("bikeCode", _join_unique),
+            totalBikeSold=("totalBikeSold", "sum"),
+            totalPartsClaimed=("totalPartsClaimed", "sum"),
+        )
+    )
+    aggregated["partsFailureRatio"] = aggregated.apply(
+        lambda row: (row["totalPartsClaimed"] / row["totalBikeSold"]) if row["totalBikeSold"] else 0.0,
+        axis=1,
+    )
+    aggregated["bikeName"] = aggregated["__group_key"]
+    aggregated = aggregated.drop(columns=["__group_key"])
+    return aggregated
+
+
+# Load bike model group config
+load_bike_model_groups()
+load_bike_model_key_choices()
 
 
 def search_bikes(query: str):
@@ -102,11 +364,13 @@ def search_bikes(query: str):
     
     # Fast local search using pre-loaded list
     query_lower = query.strip().lower()
-    
+
+    choices = get_bike_model_choices()
+
     # Use generator for faster filtering, limit early
     count = 0
     filtered_names = []
-    for name in ALL_BIKE_NAMES:
+    for name in choices:
         if query_lower in name.lower():
             filtered_names.append(name)
             count += 1
@@ -346,6 +610,58 @@ def convert_date_to_string(date_value):
         return None
 
 
+def aggregate_parts_by_name(df: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate part counts across bike models by part name."""
+    if df is None or df.empty:
+        return df
+
+    columns = df.columns.tolist()
+    columns_lower = [c.lower() for c in columns]
+
+    label_col = None
+    value_col = None
+    code_col = None
+
+    for i, col in enumerate(columns_lower):
+        if "claimcount" in col or "claim_count" in col or "count" in col:
+            value_col = columns[i]
+            break
+
+    for i, col in enumerate(columns_lower):
+        if "partname" in col or "part_name" in col or (col == "name"):
+            label_col = columns[i]
+            break
+
+    for i, col in enumerate(columns_lower):
+        if "partcode" in col or "part_code" in col or col == "code":
+            code_col = columns[i]
+            break
+
+    if not label_col or not value_col:
+        return df
+
+    work_df = df.copy()
+    work_df[label_col] = work_df[label_col].astype(str)
+    work_df[value_col] = pd.to_numeric(work_df[value_col], errors="coerce").fillna(0)
+    if code_col:
+        work_df[code_col] = work_df[code_col].astype(str)
+
+    def _join_unique(values):
+        cleaned = [str(v).strip() for v in values if str(v).strip()]
+        return ", ".join(dict.fromkeys(cleaned))
+
+    agg_map = {value_col: (value_col, "sum")}
+    if code_col:
+        agg_map["__partcodes"] = (code_col, _join_unique)
+
+    aggregated = work_df.groupby(label_col, as_index=False).agg(**agg_map)
+    if "__partcodes" in aggregated.columns:
+        aggregated[code_col] = aggregated["__partcodes"]
+        aggregated = aggregated.drop(columns=["__partcodes"])
+
+    return aggregated
+
+
 def fetch_top_parts(limit, from_date, to_date):
     """Fetch top warranty parts from the API."""
     try:
@@ -430,25 +746,18 @@ def fetch_parts_by_bike_model(limit, bike_model: str, from_date, to_date):
             fig = create_bar_chart(pd.DataFrame())
             return fig, "⚠️ Please select a From Date (required)"
         
-        # Start with required parameter
         params = {"bike_model": bike_model.strip()}
-        
-        # Add optional parameters only if they have valid values (not None, not empty, not 0)
         if limit is not None and limit != "" and limit != 0:
             params["limit"] = int(limit)
-
-        # Add dates as strings (YYYY-MM-DD format)
         params["from_date"] = from_date_str
-
-        # to_date is optional (API defaults to today)
         if to_date_str:
             params["to_date"] = to_date_str
-        
+
         response = requests.get(API_URL_BIKE_MODEL, params=params, timeout=30)
         response.raise_for_status()
-        
+
         data = response.json()
-        
+
         # Handle different response formats
         if isinstance(data, list):
             if len(data) == 0:
@@ -465,12 +774,17 @@ def fetch_parts_by_bike_model(limit, bike_model: str, from_date, to_date):
         else:
             fig = create_bar_chart(pd.DataFrame())
             return fig, f"Unexpected response format: {type(data)}"
+
+        df = aggregate_parts_by_name(df)
         
         # Create the chart with bike model in title
-        chart_title = f"Top Parts for {bike_model}" if bike_model else "Top Parts by Bike Model"
+        display_label = bike_model
+        chart_title = f"Top Parts for {display_label}" if display_label else "Top Parts by Bike Model"
         fig = create_bar_chart(df, chart_title)
-        
-        return fig, f"✅ Top {len(df)} Warranty ClaimedParts for {bike_model}"
+
+        status = f"✅ Aggregated parts for {display_label}"
+
+        return fig, status
         
     except requests.exceptions.ConnectionError:
         fig = create_bar_chart(pd.DataFrame())
@@ -657,8 +971,12 @@ def fetch_failure_ratio(limit):
             fig = create_failure_ratio_chart(pd.DataFrame())
             return fig, "No data found."
 
-        fig = create_failure_ratio_chart(df, "Bike Model Failure Ratio (Parts Claimed / Bikes Sold)")
-        return fig, f"✅ Loaded {len(df)} bike models"
+        aggregated_df = aggregate_failure_ratio_by_group(df)
+        fig = create_failure_ratio_chart(
+            aggregated_df,
+            "Bike Model Failure Ratio (Parts Claimed / Bikes Sold)",
+        )
+        return fig, f"✅ Loaded {len(aggregated_df)} bike models"
 
     except requests.exceptions.ConnectionError:
         fig = create_failure_ratio_chart(pd.DataFrame())
@@ -1066,14 +1384,21 @@ with gr.Blocks() as app:
                         info="Number of records to fetch (leave empty for default)"
                     )
 
+                    bike_model_choices = get_bike_model_choices()
                     bike_dropdown = gr.Dropdown(
-                        choices=ALL_BIKE_NAMES,
+                        choices=bike_model_choices,
+                        value=bike_model_choices[0] if bike_model_choices else None,
                         label="🏍️ Select Bike Model",
                         info="Type to filter bikes",
                         interactive=True,
                         filterable=True,
                         elem_id="bike-model-dropdown"
                     )
+                    # gr.Markdown(
+                    #     f"Loaded **{len(bike_model_choices)}** bike models from `app/config/bike_model_groups.json`."
+                    #     if bike_model_choices
+                    #     else f"⚠️ No bike models loaded from `{BIKE_MODEL_GROUPS_PATH}` (check server logs)."
+                    # )
                     
                     fetch_btn_2 = gr.Button("🚀 Fetch Data", variant="primary", size="lg")
                 
