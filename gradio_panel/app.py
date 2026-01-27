@@ -186,6 +186,15 @@ BIKE_MODEL_GROUP_KEYS = []
 BIKE_MODEL_KEY_CHOICES = []
 
 
+def normalize_bike_name(value: object) -> str:
+    """Normalize bike names for matching (trim + collapse whitespace + remove NBSP)."""
+    if value is None:
+        return ""
+    s = str(value).replace("\u00a0", " ").strip()
+    # Collapse repeated whitespace to single spaces
+    return " ".join(s.split())
+
+
 def load_bike_model_key_choices():
     """Load dropdown bike model keys from the JSON config (top-level keys)."""
     global BIKE_MODEL_KEY_CHOICES
@@ -236,35 +245,39 @@ def load_bike_model_groups():
             data = BIKE_MODEL_GROUPS_FALLBACK
 
         for group_key, model_list in data.items():
-            key = str(group_key).strip()
+            key = normalize_bike_name(group_key)
             if not key:
                 continue
             lookup[key] = key
+            lookup[normalize_bike_name(key)] = key
             cleaned_models = []
             if isinstance(model_list, list):
                 for model_name in model_list:
-                    model = str(model_name).strip()
+                    model = normalize_bike_name(model_name)
                     if not model:
                         continue
                     cleaned_models.append(model)
                     lookup[model] = key
+                    lookup[normalize_bike_name(model)] = key
             groups[key] = cleaned_models
     except FileNotFoundError:
         print(f"⚠️ Bike model groups file not found: {BIKE_MODEL_GROUPS_PATH} (using fallback groups)")
         data = BIKE_MODEL_GROUPS_FALLBACK
         for group_key, model_list in data.items():
-            key = str(group_key).strip()
+            key = normalize_bike_name(group_key)
             if not key:
                 continue
             lookup[key] = key
+            lookup[normalize_bike_name(key)] = key
             cleaned_models = []
             if isinstance(model_list, list):
                 for model_name in model_list:
-                    model = str(model_name).strip()
+                    model = normalize_bike_name(model_name)
                     if not model:
                         continue
                     cleaned_models.append(model)
                     lookup[model] = key
+                    lookup[normalize_bike_name(model)] = key
             groups[key] = cleaned_models
     except Exception as e:
         print(f"⚠️ Failed to load bike model groups: {e}")
@@ -324,8 +337,10 @@ def aggregate_failure_ratio_by_group(df: pd.DataFrame) -> pd.DataFrame:
     if "bikeName" not in work_df.columns:
         return df
 
+    # Normalize names so minor whitespace differences don't break grouping
     work_df["bikeName"] = work_df["bikeName"].astype(str)
-    work_df["__group_key"] = work_df["bikeName"].map(
+    work_df["__bikeNameNorm"] = work_df["bikeName"].map(normalize_bike_name)
+    work_df["__group_key"] = work_df["__bikeNameNorm"].map(
         lambda name: BIKE_MODEL_GROUP_LOOKUP.get(name, name)
     )
 
