@@ -26,4 +26,14 @@ urlpatterns = [
         api.warranty_failure_ratio_by_bike_model_api,
         name='warranty_failure_ratio_by_bike_model_api',
     ),
+    path(
+        'api/warranty/predict',
+        api.predict_warranty_parts_api,
+        name='predict_warranty_parts_api',
+    ),
+    path(
+        'api/warranty/predict/detailed',
+        api.predict_warranty_parts_detailed_api,
+        name='predict_warranty_parts_detailed_api',
+    ),
 ]

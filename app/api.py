@@ -7,6 +7,7 @@ from datetime import date
 
 from app.db_management import db_manager
 from app.views import jobquery
+from app.prediction_utils import get_predictions_for_next_months, get_detailed_predictions
 
 
 def _parse_date_range(query_params):
@@ -368,3 +369,186 @@ def all_bike_names_api(request):
         )
 
 
+@extend_schema(
+    operation_id="predict_warranty_parts",
+    description=(
+        "Predict warranty parts failures for the next N months using CatBoost model. "
+        "Returns aggregated predictions by month, by part, and by bike model. "
+        "Uses top N bike models and top N parts for prediction."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="months",
+            type=OpenApiTypes.INT,
+            required=False,
+            description="Number of months to forecast (default 6, max 12).",
+        ),
+        OpenApiParameter(
+            name="top_bike_models",
+            type=OpenApiTypes.INT,
+            required=False,
+            description="Number of top bike models to include (default 20, max 50).",
+        ),
+        OpenApiParameter(
+            name="top_parts",
+            type=OpenApiTypes.INT,
+            required=False,
+            description="Number of top parts to include (default 20, max 50).",
+        ),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+)
+@api_view(["GET"])
+def predict_warranty_parts_api(request):
+    """
+    Predict warranty parts failures for the next N months.
+
+    Returns:
+        {
+            "ret": True/False,
+            "data": {
+                "monthly": {"columns": [...], "data": [[...], ...]},
+                "by_part": {"columns": [...], "data": [[...], ...]},
+                "by_bike_model": {"columns": [...], "data": [[...], ...]},
+                "total_predicted": float,
+                "forecast_period": {"start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}
+            },
+            "error": None or error message
+        }
+    """
+    # Parse parameters
+    months_raw = request.query_params.get("months", "6")
+    top_bike_models_raw = request.query_params.get("top_bike_models", "20")
+    top_parts_raw = request.query_params.get("top_parts", "20")
+
+    try:
+        months = min(int(months_raw), 12)
+    except Exception:
+        return Response(
+            {"ret": False, "data": None, "error": f"Invalid 'months' query param: {months_raw}"},
+            status=400,
+        )
+
+    try:
+        top_bike_models = min(int(top_bike_models_raw), 50)
+    except Exception:
+        return Response(
+            {"ret": False, "data": None, "error": f"Invalid 'top_bike_models' query param: {top_bike_models_raw}"},
+            status=400,
+        )
+
+    try:
+        top_parts = min(int(top_parts_raw), 50)
+    except Exception:
+        return Response(
+            {"ret": False, "data": None, "error": f"Invalid 'top_parts' query param: {top_parts_raw}"},
+            status=400,
+        )
+
+    try:
+        data = get_predictions_for_next_months(
+            n_months=months,
+            top_n_bike_models=top_bike_models,
+            top_n_parts=top_parts
+        )
+        return Response({"ret": True, "data": data, "error": None})
+    except FileNotFoundError as e:
+        return Response(
+            {"ret": False, "data": None, "error": f"Model or data not found: {e}"},
+            status=404,
+        )
+    except Exception as e:
+        return Response(
+            {"ret": False, "data": None, "error": f"{e.__class__.__name__}: {e}"},
+            status=500,
+        )
+
+
+@extend_schema(
+    operation_id="predict_warranty_parts_detailed",
+    description=(
+        "Get detailed warranty parts failure predictions for each combination of "
+        "ProductName, BikeModel, and RegionName. Returns data in Gradio-compatible format."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="months",
+            type=OpenApiTypes.INT,
+            required=False,
+            description="Number of months to forecast (default 6, max 12).",
+        ),
+        OpenApiParameter(
+            name="top_bike_models",
+            type=OpenApiTypes.INT,
+            required=False,
+            description="Number of top bike models to include (default 20, max 50).",
+        ),
+        OpenApiParameter(
+            name="top_parts",
+            type=OpenApiTypes.INT,
+            required=False,
+            description="Number of top parts to include (default 20, max 50).",
+        ),
+    ],
+    responses={200: OpenApiTypes.OBJECT},
+)
+@api_view(["GET"])
+def predict_warranty_parts_detailed_api(request):
+    """
+    Get detailed predictions for each combination.
+
+    Returns:
+        {
+            "ret": True/False,
+            "data": {
+                "columns": ["date", "ProductName", "BikeModel", "RegionName", "PredictedClaimCount"],
+                "data": [[...], [...], ...]
+            },
+            "error": None or error message
+        }
+    """
+    months_raw = request.query_params.get("months", "6")
+    top_bike_models_raw = request.query_params.get("top_bike_models", "20")
+    top_parts_raw = request.query_params.get("top_parts", "20")
+
+    try:
+        months = min(int(months_raw), 12)
+    except Exception:
+        return Response(
+            {"ret": False, "data": None, "error": f"Invalid 'months' query param: {months_raw}"},
+            status=400,
+        )
+
+    try:
+        top_bike_models = min(int(top_bike_models_raw), 50)
+    except Exception:
+        return Response(
+            {"ret": False, "data": None, "error": f"Invalid 'top_bike_models' query param: {top_bike_models_raw}"},
+            status=400,
+        )
+
+    try:
+        top_parts = min(int(top_parts_raw), 50)
+    except Exception:
+        return Response(
+            {"ret": False, "data": None, "error": f"Invalid 'top_parts' query param: {top_parts_raw}"},
+            status=400,
+        )
+
+    try:
+        data = get_detailed_predictions(
+            n_months=months,
+            top_n_bike_models=top_bike_models,
+            top_n_parts=top_parts
+        )
+        return Response({"ret": True, "data": data, "error": None})
+    except FileNotFoundError as e:
+        return Response(
+            {"ret": False, "data": None, "error": f"Model or data not found: {e}"},
+            status=404,
+        )
+    except Exception as e:
+        return Response(
+            {"ret": False, "data": None, "error": f"{e.__class__.__name__}: {e}"},
+            status=500,
+        )
