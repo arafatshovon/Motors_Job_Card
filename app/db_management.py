@@ -596,9 +596,12 @@ class DBManager:
                     BP.ProductCode AS BikeCode,
                     BP.ProductName AS BikeName,
                     COUNT(DISTINCT DID.ChassisNo) AS TotalBikeSold
-                FROM DealarInvoiceDetails DID
+                FROM DealarInvoiceMaster DIM
+                INNER JOIN DealarInvoiceDetails DID
+                    ON DIM.InvoiceID = DID.InvoiceID
                 INNER JOIN Product BP
                     ON DID.ProductCode = BP.ProductCode
+                WHERE BP.Business = 'C'
                 GROUP BY
                     BP.ProductCode,
                     BP.ProductName
