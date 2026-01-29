@@ -10,3 +10,4 @@ pytz
 six
 sqlparse
 typing-extensions
+catboost
