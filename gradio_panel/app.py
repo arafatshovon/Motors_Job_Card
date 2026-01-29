@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import os
 import json
+import re
 
 
 API_HOST = os.environ.get("API_HOST", "0.0.0.0")
@@ -13,6 +14,7 @@ API_BASE_URL = f"http://{API_HOST}:{API_PORT}"
 API_URL_TOP_PARTS = f"{API_BASE_URL}/api/warranty/top-parts"
 API_URL_BIKE_MODEL = f"{API_BASE_URL}/api/warranty/top-parts/for-bike-model"
 API_URL_FAILURE_RATIO = f"{API_BASE_URL}/api/warranty/failure-ratio/by-bike-model"
+API_URL_PREDICTION_DETAILED = f"{API_BASE_URL}/api/warranty/predict/detailed"
 
 # API_URL_TOP_PARTS = "http://0.0.0.0:9001/api/warranty/top-parts"
 # API_URL_BIKE_MODEL = "http://0.0.0.0:9001/api/warranty/top-parts/for-bike-model"
@@ -49,6 +51,41 @@ def resolve_bike_model_groups_path() -> str:
 
 
 BIKE_MODEL_GROUPS_PATH = resolve_bike_model_groups_path()
+
+# Historical data CSV (created on first /predict/detailed call)
+ENHANCED_DATA_FILENAME = "df_monthly_enhanced_filled.csv"
+
+
+def resolve_enhanced_data_path() -> str:
+    # env_path = os.environ.get("ENHANCED_DATA_PATH")
+    # here = os.path.dirname(__file__)
+    # cwd = os.getcwd()
+    #
+    # candidates = [
+    #     env_path,
+    #     # repo layout (gradio_panel/ at repo root, cluster_data at app/cluster_data/)
+    #     os.path.join(here, "..", "app", "cluster_data", ENHANCED_DATA_FILENAME),
+    #     os.path.join(cwd, "app", "cluster_data", ENHANCED_DATA_FILENAME),
+    #     os.path.join(cwd, "app", "app", "cluster_data", ENHANCED_DATA_FILENAME),
+    #     os.path.join(cwd, "cluster_data", ENHANCED_DATA_FILENAME),
+    #     "/app/cluster_data/df_monthly_enhanced_filled.csv",
+    #     # "/app/app/cluster_data/df_monthly_enhanced_filled.csv",
+    # ]
+    #
+    # for p in candidates:
+    #     if not p:
+    #         continue
+    #     if os.path.exists(p):
+    #         return os.path.abspath(p)
+    #
+    # for p in candidates:
+    #     if p:
+    #         return os.path.abspath(p)
+    # return ENHANCED_DATA_FILENAME
+    return os.path.join(".", "cluster_data", ENHANCED_DATA_FILENAME)
+
+
+ENHANCED_DATA_PATH = resolve_enhanced_data_path()
 
 # Fallback config: used if the JSON file isn't present inside the container.
 # This is copied from app/config/bike_model_groups.json so the dropdown can still render keys.
@@ -595,6 +632,365 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
     )
     
     return fig
+
+
+def create_empty_figure(message="No data available", height=400):
+    fig = go.Figure()
+    fig.add_annotation(
+        text=message,
+        xref="paper", yref="paper",
+        x=0.5, y=0.5, showarrow=False,
+        font=dict(size=18, color="#64748b")
+    )
+    fig.update_layout(
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        height=height
+    )
+    return fig
+
+
+def _normalize_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value).lower())
+
+
+def normalize_prediction_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize prediction columns to expected names."""
+    if df is None or df.empty:
+        return df
+
+    normalized = {_normalize_key(col): col for col in df.columns}
+    mapping = {
+        "date": "date",
+        "productname": "ProductName",
+        "bikemodel": "BikeModel",
+        "regionname": "RegionName",
+        "predictedclaimcount": "PredictedClaimCount",
+    }
+
+    for key, target in mapping.items():
+        source = normalized.get(key)
+        if source and target not in df.columns:
+            df[target] = df[source]
+
+    return df
+
+
+def load_historical_monthly_data(resolved_path: str | None = None) -> pd.DataFrame:
+    """Load historical monthly claim counts from df_monthly_enhanced_filled.csv."""
+    if not resolved_path:
+        resolved_path = ENHANCED_DATA_PATH
+        if not os.path.exists(resolved_path):
+            resolved_path = resolve_enhanced_data_path()
+
+    if not os.path.exists(resolved_path):
+        return pd.DataFrame()
+
+    print(f"Loading historical monthly data from {resolved_path}")
+    df = pd.read_csv(resolved_path)
+    if df.empty:
+        return df
+
+    if "date" not in df.columns:
+        if "year" in df.columns and "month" in df.columns:
+            df["date"] = pd.to_datetime(
+                df["year"].astype(str) + "-" + df["month"].astype(str) + "-01",
+                errors="coerce"
+            )
+
+    df["date"] = pd.to_datetime(df.get("date"), errors="coerce")
+
+    if "ClaimCount" not in df.columns:
+        alt = next((c for c in df.columns if c.lower() == "claimcount"), None)
+        if alt:
+            df["ClaimCount"] = df[alt]
+
+    df["ClaimCount"] = pd.to_numeric(df.get("ClaimCount", 0), errors="coerce").fillna(0)
+
+    return df[["date", "ClaimCount"]].dropna(subset=["date"])
+
+
+def create_prediction_line_chart(history_df: pd.DataFrame, pred_df: pd.DataFrame):
+    if (history_df is None or history_df.empty) and (pred_df is None or pred_df.empty):
+        return create_empty_figure("No historical or predicted data available", height=420)
+
+    fig = go.Figure()
+
+    if history_df is not None and not history_df.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=history_df["month"],
+                y=history_df["count"],
+                mode="lines+markers",
+                name="Historical (Actual)",
+                line=dict(color="#3b82f6", width=3),
+                marker=dict(size=8),
+                fill="tozeroy",
+                fillcolor="rgba(59, 130, 246, 0.20)",
+            )
+        )
+
+    if pred_df is not None and not pred_df.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=pred_df["month"],
+                y=pred_df["count"],
+                mode="lines+markers",
+                name="Predicted (Next 6 Months)",
+                line=dict(color="#ef4444", width=3, dash="dash"),
+                marker=dict(size=8, symbol="square"),
+                fill="tozeroy",
+                fillcolor="rgba(239, 68, 68, 0.20)",
+            )
+        )
+
+        if history_df is not None and not history_df.empty:
+            boundary = pred_df["month"].min()
+            if pd.notna(boundary):
+                fig.add_vline(x=boundary, line_width=1, line_dash="dot", line_color="#94a3b8")
+
+    fig.update_layout(
+        title=dict(
+            text="<b>1-Year Warranty Parts Forecast (6 Months Historical + 6 Months Predicted)</b>",
+            font=dict(size=18, color="#1e293b"),
+            x=0.5,
+            xanchor="center",
+        ),
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        font=dict(color="#1e293b", family="Outfit, sans-serif"),
+        height=460,
+        margin=dict(l=30, r=30, t=70, b=50),
+        xaxis=dict(
+            title=dict(text="Month", font=dict(color="#64748b", size=12)),
+            tickformat="%b %Y",
+            showgrid=True,
+            gridcolor="#e2e8f0",
+        ),
+        yaxis=dict(
+            title=dict(text="Total Failed Parts (Claim Count)", font=dict(color="#64748b", size=12)),
+            showgrid=True,
+            gridcolor="#e2e8f0",
+        ),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+    )
+    return fig
+
+
+def create_predicted_parts_bar_chart(df: pd.DataFrame, top_n: int = 10):
+    if df is None or df.empty:
+        return create_empty_figure("No predicted parts data available", height=420)
+
+    agg = (
+        df.groupby("ProductName", as_index=False)["PredictedClaimCount"]
+        .sum()
+        .sort_values("PredictedClaimCount", ascending=False)
+        .head(top_n)
+    )
+
+    if agg.empty:
+        return create_empty_figure("No predicted parts data available", height=420)
+
+    agg = agg.sort_values("PredictedClaimCount", ascending=True)
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=agg["PredictedClaimCount"],
+            y=agg["ProductName"],
+            orientation="h",
+            marker=dict(color="#ef4444"),
+            text=agg["PredictedClaimCount"].round(2),
+            textposition="outside",
+        )
+    )
+    fig.update_layout(
+        title=dict(
+            text=f"<b>Top {len(agg)} Parts Predicted to Fail (Next 6 Months)</b>",
+            font=dict(size=16, color="#1e293b"),
+            x=0.5,
+            xanchor="center",
+        ),
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        font=dict(color="#1e293b", family="Outfit, sans-serif"),
+        height=max(420, len(agg) * 45),
+        margin=dict(l=20, r=40, t=60, b=40),
+        xaxis=dict(
+            title=dict(text="Predicted Claim Count (6 Months)", font=dict(color="#64748b", size=12)),
+            showgrid=True,
+            gridcolor="#e2e8f0",
+        ),
+        yaxis=dict(showgrid=False),
+        showlegend=False,
+    )
+    return fig
+
+
+def create_bike_model_pie_chart(df: pd.DataFrame, top_n: int = 8):
+    if df is None or df.empty:
+        return create_empty_figure("No bike model distribution available", height=420)
+
+    agg = (
+        df.groupby("BikeModel", as_index=False)["PredictedClaimCount"]
+        .sum()
+        .sort_values("PredictedClaimCount", ascending=False)
+    )
+
+    if agg.empty:
+        return create_empty_figure("No bike model distribution available", height=420)
+
+    top = agg.head(top_n).copy()
+    rest = agg.iloc[top_n:]
+    if not rest.empty:
+        top = pd.concat(
+            [
+                top,
+                pd.DataFrame(
+                    [{"BikeModel": "Other", "PredictedClaimCount": rest["PredictedClaimCount"].sum()}]
+                ),
+            ],
+            ignore_index=True,
+        )
+
+    fig = go.Figure(
+        data=[
+            go.Pie(
+                labels=top["BikeModel"],
+                values=top["PredictedClaimCount"],
+                hole=0.2,
+                textinfo="percent+label",
+            )
+        ]
+    )
+    fig.update_layout(
+        title=dict(
+            text="<b>Predicted Failures by Bike Model (Next 6 Months)</b>",
+            font=dict(size=16, color="#1e293b"),
+            x=0.5,
+            xanchor="center",
+        ),
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        font=dict(color="#1e293b", family="Outfit, sans-serif"),
+        height=420,
+        margin=dict(l=20, r=20, t=60, b=40),
+        showlegend=True,
+    )
+    return fig
+
+
+def fetch_prediction_dashboard(top_n_parts):
+    """Fetch predictions and build the forecast dashboard."""
+    try:
+        if top_n_parts is None or top_n_parts == "" or top_n_parts == 0:
+            top_n_parts = 10
+        top_n_parts = max(1, int(top_n_parts))
+
+        cwd = os.getcwd()
+
+        response = requests.get(API_URL_PREDICTION_DETAILED, timeout=60)
+        response.raise_for_status()
+        payload = response.json()
+
+        df_pred = pd.DataFrame()
+        if isinstance(payload, dict) and "data" in payload:
+            data_block = payload["data"]
+            if isinstance(data_block, dict) and "columns" in data_block and "data" in data_block:
+                df_pred = pd.DataFrame(data_block["data"], columns=data_block["columns"])
+            elif isinstance(data_block, list):
+                df_pred = pd.DataFrame(data_block)
+        elif isinstance(payload, list):
+            df_pred = pd.DataFrame(payload)
+
+        df_pred = normalize_prediction_columns(df_pred)
+
+        required_cols = ["date", "ProductName", "BikeModel", "PredictedClaimCount"]
+        missing = [col for col in required_cols if col not in df_pred.columns]
+        if missing:
+            empty = create_empty_figure("Prediction response missing columns", height=420)
+            return empty, empty, empty, f"❌ Missing prediction columns: {', '.join(missing)}"
+
+        df_pred["date"] = pd.to_datetime(df_pred["date"], errors="coerce")
+        df_pred["PredictedClaimCount"] = pd.to_numeric(
+            df_pred["PredictedClaimCount"], errors="coerce"
+        ).fillna(0)
+
+        df_pred = df_pred.dropna(subset=["date"])
+
+        if df_pred.empty:
+            empty = create_empty_figure("No predicted data returned", height=420)
+            return empty, empty, empty, "No prediction data returned."
+
+        df_pred["month"] = df_pred["date"].dt.to_period("M").dt.to_timestamp()
+
+        pred_start = df_pred["month"].min()
+        pred_end = pred_start + pd.DateOffset(months=5)
+        pred_range_df = df_pred[(df_pred["month"] >= pred_start) & (df_pred["month"] <= pred_end)]
+
+        pred_monthly = (
+            pred_range_df.groupby("month", as_index=False)["PredictedClaimCount"].sum()
+        )
+        month_index = pd.date_range(pred_start, pred_end, freq="MS")
+        pred_monthly = (
+            pred_monthly.set_index("month")
+            .reindex(month_index, fill_value=0)
+            .reset_index()
+            .rename(columns={"index": "month", "PredictedClaimCount": "count"})
+        )
+
+        # Resolve after prediction call because the CSV is created on first run.
+        latest_csv_path = resolve_enhanced_data_path()
+        historical_df = load_historical_monthly_data(latest_csv_path)
+        history_monthly = pd.DataFrame()
+        history_note = ""
+        if historical_df is not None and not historical_df.empty:
+            hist_end = pred_start - pd.DateOffset(months=1)
+            hist_start = hist_end - pd.DateOffset(months=5)
+            historical_df["month"] = historical_df["date"].dt.to_period("M").dt.to_timestamp()
+            historical_range = historical_df[
+                (historical_df["month"] >= hist_start) & (historical_df["month"] <= hist_end)
+            ]
+            history_monthly = (
+                historical_range.groupby("month", as_index=False)["ClaimCount"].sum()
+            )
+            history_index = pd.date_range(hist_start, hist_end, freq="MS")
+            history_monthly = (
+                history_monthly.set_index("month")
+                .reindex(history_index, fill_value=0)
+                .reset_index()
+                .rename(columns={"index": "month", "ClaimCount": "count"})
+            )
+        else:
+            history_note = (
+                f"⚠️ Historical file not found. cwd={cwd}, resolved={latest_csv_path}, "
+                f"exists={os.path.exists(latest_csv_path)}"
+            )
+
+        line_chart = create_prediction_line_chart(history_monthly, pred_monthly)
+        bar_chart = create_predicted_parts_bar_chart(pred_range_df, top_n=top_n_parts)
+        pie_chart = create_bike_model_pie_chart(pred_range_df)
+
+        status = (
+            f"✅ Loaded {len(df_pred)} prediction rows. Top N parts = {top_n_parts}. "
+            f"cwd={cwd}"
+        )
+        if history_note:
+            status = f"{status} {history_note}"
+
+        return line_chart, bar_chart, pie_chart, status
+
+    except requests.exceptions.ConnectionError:
+        empty = create_empty_figure("Connection error", height=420)
+        return empty, empty, empty, "❌ Connection Error: Could not connect to the API."
+    except requests.exceptions.Timeout:
+        empty = create_empty_figure("Request timeout", height=420)
+        return empty, empty, empty, "❌ Timeout: The request took too long to complete."
+    except requests.exceptions.HTTPError as e:
+        empty = create_empty_figure("HTTP error", height=420)
+        return empty, empty, empty, f"❌ HTTP Error: {e}"
+    except Exception as e:
+        empty = create_empty_figure("Unexpected error", height=420)
+        return empty, empty, empty, f"❌ Error: {str(e)}"
 
 
 def convert_date_to_string(date_value):
@@ -1489,6 +1885,39 @@ with gr.Blocks() as app:
                 fn=fetch_failure_ratio,
                 inputs=[limit_input_3],
                 outputs=[results_chart_3, status_output_3],
+            )
+
+        # Tab 4: Prediction Dashboard (6 Months)
+        with gr.TabItem("🔮 Prediction (6 Months)"):
+            with gr.Row():
+                with gr.Column(scale=1):
+                    gr.Markdown("### ⚙️ Actions")
+                    top_n_parts_input = gr.Number(
+                        label="🔢 Top N Parts (Prediction)",
+                        value=10,
+                        step=1,
+                        info="Number of parts to show in the bar chart",
+                    )
+                    fetch_btn_4 = gr.Button("🚀 Fetch Predictions", variant="primary", size="lg")
+
+                with gr.Column(scale=3):
+                    gr.Markdown("### 📊 Visualization")
+                    status_output_4 = gr.Textbox(
+                        label="Status",
+                        interactive=False,
+                        lines=1,
+                        elem_classes=["status-output"],
+                    )
+                    prediction_line_chart = gr.Plot(label="Forecast (Historical + Predicted)")
+
+                    with gr.Row():
+                        prediction_bar_chart = gr.Plot(label="Top Predicted Parts")
+                        prediction_pie_chart = gr.Plot(label="Bike Model Share")
+
+            fetch_btn_4.click(
+                fn=fetch_prediction_dashboard,
+                inputs=[top_n_parts_input],
+                outputs=[prediction_line_chart, prediction_bar_chart, prediction_pie_chart, status_output_4],
             )
 
 

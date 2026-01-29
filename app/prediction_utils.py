@@ -18,9 +18,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEST_DIR = os.path.join(BASE_DIR, 'test')
 CLUSTER_DATA_DIR = os.path.join(BASE_DIR, 'cluster_data')
 
-MODEL_PATH = os.path.join(TEST_DIR, 'catboost_enhanced_model.cbm')
-METADATA_PATH = os.path.join(TEST_DIR, 'model_metadata.pkl')
-WARRANTY_DATA_PATH = os.path.join(TEST_DIR, 'warranty_data.csv')
+# Model + metadata are stored in cluster_data inside the container
+MODEL_PATH = os.path.join(CLUSTER_DATA_DIR, 'catboost_enhanced_model.cbm')
+METADATA_PATH = os.path.join(CLUSTER_DATA_DIR, 'model_metadata.pkl')
+WARRANTY_DATA_PATH = os.path.join(CLUSTER_DATA_DIR, 'warranty_data.csv')
 ENHANCED_DATA_PATH = os.path.join(CLUSTER_DATA_DIR, 'df_monthly_enhanced_filled.csv')
 
 # Bike model mapping
