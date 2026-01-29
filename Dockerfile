@@ -1,5 +1,5 @@
-# FROM teamacimisai/django-mssql-base-image-python3.12:latest
-FROM teamacimisai/django-mssql-base:latest
+FROM teamacimisai/django-mssql-base-image-python3.12:latest
+# FROM teamacimisai/django-mssql-base:latest
 
 WORKDIR /app
 
@@ -8,7 +8,7 @@ RUN pip install pip --upgrade
 
 COPY requirements.txt .
 
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # copy project
 COPY . .
