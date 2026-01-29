@@ -368,6 +368,17 @@ def batch_recursive_forecast(
         for col in cat_features:
             X_batch[col] = X_batch[col].astype('category')
 
+        # Ensure datetime features are numeric if not categorical
+        for col in X_batch.columns:
+            if col in cat_features:
+                continue
+            if pd.api.types.is_datetime64_any_dtype(X_batch[col]):
+                X_batch[col] = X_batch[col].astype('int64')
+            elif X_batch[col].dtype == object:
+                parsed = pd.to_datetime(X_batch[col], errors='coerce')
+                if pd.api.types.is_datetime64_any_dtype(parsed):
+                    X_batch[col] = parsed.astype('int64')
+
         predictions = model.predict(X_batch)
         predictions = np.maximum(0, predictions)
 
