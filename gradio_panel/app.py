@@ -1365,9 +1365,10 @@ def create_failure_ratio_chart(df: pd.DataFrame, title: str = "Bike Model Failur
     return fig
 
 
-def fetch_failure_ratio(limit):
+def fetch_failure_ratio():
     """Fetch bike model failure ratios from the API."""
     try:
+        limit = 100
         params = {}
         if limit is not None and limit != "" and limit != 0:
             params["limit"] = int(limit)
@@ -1398,7 +1399,7 @@ def fetch_failure_ratio(limit):
             aggregated_df,
             "Bike Model Failure Ratio (Unique Failed Chassis / Bikes Sold)",
         )
-        return fig, f"✅ Loaded {len(aggregated_df)} bike models"
+        return fig, f""
 
     except requests.exceptions.ConnectionError:
         fig = create_failure_ratio_chart(pd.DataFrame())
@@ -1856,12 +1857,12 @@ with gr.Blocks() as app:
                 with gr.Column(scale=1):
                     gr.Markdown("### ⚙️ Query Parameters")
 
-                    limit_input_3 = gr.Number(
-                        label="📊 Limit (optional)",
-                        value=None,
-                        step=1,
-                        info="Number of bike models to fetch (leave empty for default)",
-                    )
+                    # limit_input_3 = gr.Number(
+                    #     label="📊 Limit (optional)",
+                    #     value=None,
+                    #     step=1,
+                    #     info="Number of bike models to fetch (leave empty for default)",
+                    # )
 
                     fetch_btn_3 = gr.Button("🚀 Fetch Data", variant="primary", size="lg")
 
@@ -1877,15 +1878,15 @@ with gr.Blocks() as app:
 
             fetch_btn_3.click(
                 fn=fetch_failure_ratio,
-                inputs=[limit_input_3],
+                inputs=[],
                 outputs=[results_chart_3, status_output_3],
             )
 
-            limit_input_3.submit(
-                fn=fetch_failure_ratio,
-                inputs=[limit_input_3],
-                outputs=[results_chart_3, status_output_3],
-            )
+            # limit_input_3.submit(
+            #     fn=fetch_failure_ratio,
+            #     inputs=[limit_input_3],
+            #     outputs=[results_chart_3, status_output_3],
+            # )
 
         # Tab 4: Prediction Dashboard (6 Months)
         with gr.TabItem("🔮 Prediction (6 Months)"):
