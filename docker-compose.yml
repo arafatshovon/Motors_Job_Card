@@ -5,11 +5,11 @@ services:
       dockerfile: Dockerfile
     container_name: "motors-job-card"
     command: "python manage.py runserver 0.0.0.0:${PORT:-9001}"
-    # volumes:
-    #   - .:/app
     ports:
       - "${PORT:-9001}:${PORT:-9001}"
-    restart: always
+    restart: unless-stopped
+    volumes:
+      - ./app/cluster_data:/app/cluster_data
     # deploy:
     #   resources:
     #     limits:
@@ -21,3 +21,19 @@ services:
     #   timeout: 30s
     #   retries: 5
     #   start_period: 30s
+
+  gradio_panel:
+    build:
+      context: .
+      dockerfile: Dockerfile.gradio
+    container_name: "motors-gradio-panel"
+    ports:
+      - "${GRADIO_PORT:-9002}:9002"
+    restart: unless-stopped
+    volumes:
+      - ./app/cluster_data:/app/cluster_data
+    depends_on:
+      - motors_job_card
+    environment:
+      - API_HOST=motors-job-card
+      - API_PORT=${PORT:-9001}

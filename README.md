@@ -28,13 +28,13 @@ Search bike names (typeahead): http://192.168.100.113:9001/api/bikes/search?quer
 
 Bike names from warranty claims only: http://192.168.100.113:9001/api/bikes/names
 
-Top warranty parts: http://192.168.100.113:9001/api/warranty/top-parts?limit=30
+Top warranty parts: http://192.168.100.113:9001/api/warranty/top-parts?from_date=2025-01-01&to_date=2026-01-19&limit=30
 
-Top warranty parts (last 2 years): http://192.168.100.113:9001/api/warranty/top-parts?period=2y
+Top warranty parts (to_date defaults to today): http://192.168.100.113:9001/api/warranty/top-parts?from_date=2025-01-01&limit=30
 
-Top warranty parts (last 6 months): http://192.168.100.113:9001/api/warranty/top-parts?months=6
+Top warranty parts by bike model: http://192.168.100.113:9001/api/warranty/top-parts/by-bike-model?from_date=2025-01-01&to_date=2026-01-19&limit=30
 
-Top warranty parts by bike model (last 2 years): http://192.168.100.113:9001/api/warranty/top-parts/by-bike-model?period=2y&limit=30
+Top warranty parts for a specific bike model: http://192.168.100.113:9001/api/warranty/top-parts/for-bike-model?bike_model=Model%20Name&from_date=2025-01-01&to_date=2026-01-19&limit=5
 
-Top warranty parts for a specific bike model (last 28 months): http://192.168.100.113:9001/api/warranty/top-parts/for-bike-model?bike_model=Model%20Name&period=28m&limit=5
+Warranty failure ratio by bike model: http://192.168.100.113:9001/api/warranty/failure-ratio/by-bike-model?limit=100
 ```

@@ -2,6 +2,7 @@ import pandas as pd
 import pyodbc
 import sys
 from typing import List, Optional
+from datetime import date
 from datetime import datetime, timedelta
 from threading import Thread
 import time
@@ -251,7 +252,12 @@ class DBManager:
             print(f"Sales data fetch error: {e.__class__.__name__} | {e}")
             raise DataRetrievalError("Failed to retrieve data")
 
-    def get_top_warranty_parts(self, limit: int = 30, months_back: Optional[int] = None) -> List[dict]:
+    def get_top_warranty_parts(
+        self,
+        limit: int = 30,
+        from_date: Optional[date] = None,
+        to_date: Optional[date] = None,
+    ) -> List[dict]:
         """
         Live query to SQL Server: returns top N parts by warranty-claim count.
 
@@ -264,18 +270,17 @@ class DBManager:
             limit = 30
         limit = max(1, min(limit, 200))
 
-        months_back_int: Optional[int]
-        try:
-            months_back_int = None if months_back is None else int(months_back)
-        except Exception:
-            months_back_int = None
-
-        if months_back_int is not None:
-            months_back_int = max(1, min(months_back_int, 240))  # clamp to last 1..240 months
+        if from_date is None:
+            raise ValueError("Missing required parameter: from_date")
+        if to_date is None:
+            to_date = date.today()
+        if to_date < from_date:
+            raise ValueError("Invalid date range: to_date must be >= from_date")
 
         sql = """
             DECLARE @limit INT = ?;
-            DECLARE @months_back INT = ?;
+            DECLARE @from_date DATE = ?;
+            DECLARE @to_date DATE = ?;
             SELECT TOP (@limit)
                 ISNULL(P2.PartNo, OP2.SMSCode) AS PartCode,
                 ISNULL(P2.ProductName, OP2.ProductName) AS PartName,
@@ -288,10 +293,8 @@ class DBManager:
             LEFT JOIN OtherProduct OP2
                 ON D2.ProductCode = CONVERT(VARCHAR, OP2.ProductCode)
             WHERE DWC2.Status = 1
-              AND (
-                    @months_back IS NULL
-                    OR DWC2.WCDate >= DATEADD(month, -@months_back, CONVERT(date, GETDATE()))
-                  )
+              AND DWC2.WCDate >= @from_date
+              AND DWC2.WCDate < DATEADD(day, 1, @to_date)
             GROUP BY
                 ISNULL(P2.PartNo, OP2.SMSCode),
                 ISNULL(P2.ProductName, OP2.ProductName)
@@ -305,7 +308,7 @@ class DBManager:
         while retries < max_retries:
             try:
                 cursor = self.connection.cursor()
-                cursor.execute(sql, (limit, months_back_int))
+                cursor.execute(sql, (limit, from_date, to_date))
                 rows = cursor.fetchall()
                 cursor.close()
                 cursor = None
@@ -331,7 +334,12 @@ class DBManager:
 
         raise DataRetrievalError("FAILED TO FETCH TOP WARRANTY PARTS EVEN AFTER RETRYING")
 
-    def get_top_warranty_parts_by_bike_model(self, limit: int = 30, months_back: Optional[int] = None) -> List[dict]:
+    def get_top_warranty_parts_by_bike_model(
+        self,
+        limit: int = 30,
+        from_date: Optional[date] = None,
+        to_date: Optional[date] = None,
+    ) -> List[dict]:
         """
         Live query to SQL Server: returns top N parts overall, broken down by bike model.
 
@@ -344,19 +352,18 @@ class DBManager:
             limit = 30
         limit = max(1, min(limit, 200))
 
-        months_back_int: Optional[int]
-        try:
-            months_back_int = None if months_back is None else int(months_back)
-        except Exception:
-            months_back_int = None
-
-        if months_back_int is not None:
-            months_back_int = max(1, min(months_back_int, 240))  # clamp to last 1..240 months
+        if from_date is None:
+            raise ValueError("Missing required parameter: from_date")
+        if to_date is None:
+            to_date = date.today()
+        if to_date < from_date:
+            raise ValueError("Invalid date range: to_date must be >= from_date")
 
         # Note: bike model is derived from the bike product sold for the chassis (invoice details -> Product BP).
         sql = """
             DECLARE @limit_parts INT = ?;
-            DECLARE @months_back INT = ?;
+            DECLARE @from_date DATE = ?;
+            DECLARE @to_date DATE = ?;
 
             WITH Base AS (
                 SELECT
@@ -375,10 +382,8 @@ class DBManager:
                 INNER JOIN Product BP
                     ON DID.ProductCode = BP.ProductCode
                 WHERE DWC2.Status = 1
-                  AND (
-                        @months_back IS NULL
-                        OR DWC2.WCDate >= DATEADD(month, -@months_back, CONVERT(date, GETDATE()))
-                      )
+                  AND DWC2.WCDate >= @from_date
+                  AND DWC2.WCDate < DATEADD(day, 1, @to_date)
             ),
             TopParts AS (
                 SELECT TOP (@limit_parts)
@@ -410,7 +415,7 @@ class DBManager:
         while retries < max_retries:
             try:
                 cursor = self.connection.cursor()
-                cursor.execute(sql, (limit, months_back_int))
+                cursor.execute(sql, (limit, from_date, to_date))
                 rows = cursor.fetchall()
                 cursor.close()
                 cursor = None
@@ -444,15 +449,17 @@ class DBManager:
         self,
         bike_model: str,
         limit: int = 5,
-        months_back: Optional[int] = None,
+        from_date: Optional[date] = None,
+        to_date: Optional[date] = None,
     ) -> List[dict]:
         """
-        Live query to SQL Server: returns top N parts (by claim count) for a single bike model.
+        Live query to SQL Server: returns top N parts (by claim count) for matching bike models.
 
         Args:
-          bike_model: Product BP.ProductName (bike model name)
+          bike_model: Bike model prefix (matched with LIKE @bike_model + '%')
           limit: top N parts (1..200)
-          months_back: optional filter to last N months (1..240)
+          from_date: start date (inclusive)
+          to_date: end date (inclusive). Defaults to today's date if not provided.
 
         Output:
           [{'bikeModel': '...', 'partCode': '...', 'partName': '...', 'claimCount': 123, 'partRank': 1}, ...]
@@ -467,18 +474,17 @@ class DBManager:
             limit = 5
         limit = max(1, min(limit, 200))
 
-        months_back_int: Optional[int]
-        try:
-            months_back_int = None if months_back is None else int(months_back)
-        except Exception:
-            months_back_int = None
-
-        if months_back_int is not None:
-            months_back_int = max(1, min(months_back_int, 240))  # clamp to last 1..240 months
+        if from_date is None:
+            raise ValueError("Missing required parameter: from_date")
+        if to_date is None:
+            to_date = date.today()
+        if to_date < from_date:
+            raise ValueError("Invalid date range: to_date must be >= from_date")
 
         sql = """
             DECLARE @limit INT = ?;
-            DECLARE @months_back INT = ?;
+            DECLARE @from_date DATE = ?;
+            DECLARE @to_date DATE = ?;
             DECLARE @bike_model NVARCHAR(255) = ?;
 
             WITH Agg AS (
@@ -499,11 +505,9 @@ class DBManager:
                 INNER JOIN Product BP
                     ON DID.ProductCode = BP.ProductCode
                 WHERE DWC2.Status = 1
-                  AND BP.ProductName = @bike_model
-                  AND (
-                        @months_back IS NULL
-                        OR DWC2.WCDate >= DATEADD(month, -@months_back, CONVERT(date, GETDATE()))
-                      )
+                  AND BP.ProductName LIKE @bike_model + '%'
+                  AND DWC2.WCDate >= @from_date
+                  AND DWC2.WCDate < DATEADD(DAY, 1, @to_date)
                 GROUP BY
                     BP.ProductName,
                     ISNULL(P2.PartNo, OP2.SMSCode),
@@ -514,7 +518,9 @@ class DBManager:
                 PartCode,
                 PartName,
                 ClaimCount,
-                ROW_NUMBER() OVER (ORDER BY ClaimCount DESC, PartCode ASC) AS PartRank
+                ROW_NUMBER() OVER (
+                    ORDER BY ClaimCount DESC, PartCode ASC
+                ) AS PartRank
             FROM Agg
             ORDER BY ClaimCount DESC, PartCode ASC;
         """
@@ -526,7 +532,8 @@ class DBManager:
         while retries < max_retries:
             try:
                 cursor = self.connection.cursor()
-                cursor.execute(sql, (limit, months_back_int, bike_model_str))
+                # SQL applies prefix wildcard via: LIKE @bike_model + '%'
+                cursor.execute(sql, (limit, from_date, to_date, bike_model_str))
                 rows = cursor.fetchall()
                 cursor.close()
                 cursor = None
@@ -555,6 +562,122 @@ class DBManager:
                 retries += 1
 
         raise DataRetrievalError("FAILED TO FETCH TOP WARRANTY PARTS FOR BIKE MODEL EVEN AFTER RETRYING")
+
+    def get_bike_model_failure_ratios(self, limit: int = 100) -> List[dict]:
+        """
+        Live query to SQL Server: parts failure ratio by bike model.
+
+        Failure ratio definition (updated):
+          TotalFailedChassis / TotalBikeSold
+
+        Where:
+          TotalFailedChassis = count of DISTINCT chassis numbers that had at least one claimed part.
+
+        Output:
+          [{
+            'bikeCode': '...',
+            'bikeName': '...',
+            'totalBikeSold': 123,
+            'totalFailedChassis': 45,
+            'partsFailureRatio': 0.36585
+          }, ...]
+        """
+        try:
+            limit_int = int(limit)
+        except Exception:
+            limit_int = 100
+        limit_int = max(1, min(limit_int, 500))
+
+        sql = """
+            DECLARE @limit INT = ?;
+
+            ;WITH BikeSold AS (
+                SELECT
+                    BP.ProductCode AS BikeCode,
+                    BP.ProductName AS BikeName,
+                    COUNT(DISTINCT DID.ChassisNo) AS TotalBikeSold
+                FROM DealarInvoiceMaster DIM
+                INNER JOIN DealarInvoiceDetails DID
+                    ON DIM.InvoiceID = DID.InvoiceID
+                INNER JOIN Product BP
+                    ON DID.ProductCode = BP.ProductCode
+                WHERE BP.Business = 'C'
+                GROUP BY
+                    BP.ProductCode,
+                    BP.ProductName
+            ),
+            FailedChassis AS (
+                SELECT
+                    BP.ProductCode AS BikeCode,
+                    BP.ProductName AS BikeName,
+                    COUNT(DISTINCT DWC.ChassisNo) AS TotalFailedChassis
+                FROM DealarWarrantyClaim DWC
+                INNER JOIN DealarWarrantyClaimProduct DWCP
+                    ON DWC.DCWarrantyId = DWCP.DCWarrantyId
+                INNER JOIN DealarInvoiceDetails DID
+                    ON DWC.ChassisNo = DID.ChassisNo
+                INNER JOIN Product BP
+                    ON DID.ProductCode = BP.ProductCode
+                WHERE DWC.Status = 1
+                GROUP BY
+                    BP.ProductCode,
+                    BP.ProductName
+            )
+            SELECT TOP (@limit)
+                BS.BikeCode,
+                BS.BikeName,
+                BS.TotalBikeSold,
+                ISNULL(FC.TotalFailedChassis, 0) AS TotalFailedChassis,
+                (
+                    CAST(ISNULL(FC.TotalFailedChassis, 0) AS FLOAT)
+                    / NULLIF(BS.TotalBikeSold, 0)
+                ) AS PartsFailureRatio
+            FROM BikeSold BS
+            LEFT JOIN FailedChassis FC
+                ON BS.BikeCode = FC.BikeCode
+            WHERE (
+                CAST(ISNULL(FC.TotalFailedChassis, 0) AS FLOAT)
+                / NULLIF(BS.TotalBikeSold, 0)
+            ) != 0
+            ORDER BY PartsFailureRatio DESC;
+        """
+
+        max_retries = 3
+        retries = 0
+        cursor = None
+
+        while retries < max_retries:
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(sql, (limit_int,))
+                rows = cursor.fetchall()
+                cursor.close()
+                cursor = None
+
+                out: List[dict] = []
+                for r in rows:
+                    out.append(
+                        {
+                            "bikeCode": None if r[0] is None else str(r[0]),
+                            "bikeName": None if r[1] is None else str(r[1]),
+                            "totalBikeSold": int(r[2] or 0),
+                            "totalFailedChassis": int(r[3] or 0),
+                            "partsFailureRatio": None if r[4] is None else float(r[4]),
+                        }
+                    )
+                return out
+            except Exception as e:
+                if cursor:
+                    cursor.close()
+                    cursor = None
+                print(
+                    f"******* {retries + 1}. Failed to fetch bike model failure ratios: {e.__class__.__name__} | {e}"
+                )
+                time.sleep(1)
+                self._reconnect_to_db()
+                retries += 1
+
+        raise DataRetrievalError("FAILED TO FETCH BIKE MODEL FAILURE RATIOS EVEN AFTER RETRYING")
 
     def search_bike_names(
         self,
