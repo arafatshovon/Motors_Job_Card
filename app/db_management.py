@@ -1,4 +1,4 @@
-import pandas as pd
+import pandas as pd #type:ignore
 import pyodbc
 import sys
 from typing import List, Optional
@@ -6,7 +6,7 @@ from datetime import date
 from datetime import datetime, timedelta
 from threading import Thread
 import time
-import pytz
+import pytz #type:ignore
 from traceback import format_exc
 
 class DataRetrievalError(Exception):
@@ -486,16 +486,13 @@ class DBManager:
             WITH Agg AS (
                 SELECT
                     BP.ProductName AS BikeModel,
-                    ISNULL(P2.PartNo, OP2.SMSCode) AS PartCode,
-                    ISNULL(P2.ProductName, OP2.ProductName) AS PartName,
+                    P2.ProductName AS PartName,
                     COUNT(*) AS ClaimCount
                 FROM DealarWarrantyClaim DWC2
                 INNER JOIN DealarWarrantyClaimProduct D2
                     ON DWC2.DCWarrantyId = D2.DCWarrantyId
                 LEFT JOIN Product P2
                     ON D2.ProductCode = P2.ProductCode
-                LEFT JOIN OtherProduct OP2
-                    ON D2.ProductCode = CONVERT(VARCHAR, OP2.ProductCode)
                 INNER JOIN DealarInvoiceDetails DID
                     ON DWC2.ChassisNo = DID.ChassisNo
                 INNER JOIN Product BP
@@ -506,19 +503,18 @@ class DBManager:
                   AND DWC2.WCDate < DATEADD(DAY, 1, @to_date)
                 GROUP BY
                     BP.ProductName,
-                    ISNULL(P2.PartNo, OP2.SMSCode),
-                    ISNULL(P2.ProductName, OP2.ProductName)
+                    P2.PartNo,
+                    P2.ProductName
             )
             SELECT TOP (@limit)
                 BikeModel,
-                PartCode,
                 PartName,
                 ClaimCount,
                 ROW_NUMBER() OVER (
-                    ORDER BY ClaimCount DESC, PartCode ASC
+                    ORDER BY ClaimCount DESC
                 ) AS PartRank
             FROM Agg
-            ORDER BY ClaimCount DESC, PartCode ASC;
+            ORDER BY ClaimCount DESC;
         """
 
         max_retries = 3
@@ -539,10 +535,10 @@ class DBManager:
                     out.append(
                         {
                             "bikeModel": None if r[0] is None else str(r[0]),
-                            "partCode": None if r[1] is None else str(r[1]),
-                            "partName": None if r[2] is None else str(r[2]),
-                            "claimCount": int(r[3]),
-                            "partRank": int(r[4]),
+                            # "partCode": None if r[1] is None else str(r[1]),
+                            "partName": None if r[2] is None else str(r[1]),
+                            "claimCount": int(r[2]),
+                            "partRank": int(r[3]),
                         }
                     )
                 return out

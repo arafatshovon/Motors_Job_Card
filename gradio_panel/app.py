@@ -1,7 +1,7 @@
-import gradio as gr
-import requests
-import pandas as pd
-import plotly.graph_objects as go
+import gradio as gr #type:ignore
+import requests #type:ignore
+import pandas as pd #type:ignore
+import plotly.graph_objects as go #type:ignore
 import os
 import json
 import re
@@ -1202,14 +1202,21 @@ def fetch_parts_by_bike_model(limit, bike_model: str, from_date, to_date):
             fig = create_bar_chart(pd.DataFrame())
             return fig, f"Unexpected response format: {type(data)}"
 
-        df = aggregate_parts_by_name(df)
+        # If the API returns a partcode column for parts-by-bike-model, ignore it and render by PartName only.
+        if not df.empty:
+            code_col = next(
+                (col for col in df.columns if "partcode" in col.lower() or "part_code" in col.lower() or col.lower() == "code"),
+                None,
+            )
+            if code_col:
+                df = df.drop(columns=[code_col])
         
         # Create the chart with bike model in title
         display_label = bike_model
         chart_title = f"Top Parts for {display_label}" if display_label else "Top Parts by Bike Model"
         fig = create_bar_chart(df, chart_title)
 
-        status = f"✅ Aggregated parts for {display_label}"
+        status = f"✅ Parts for {display_label}"
 
         return fig, status
         
