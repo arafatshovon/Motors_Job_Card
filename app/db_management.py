@@ -282,22 +282,18 @@ class DBManager:
             DECLARE @from_date DATE = ?;
             DECLARE @to_date DATE = ?;
             SELECT TOP (@limit)
-                ISNULL(P2.PartNo, OP2.SMSCode) AS PartCode,
-                ISNULL(P2.ProductName, OP2.ProductName) AS PartName,
+                P2.ProductName AS PartName,
                 COUNT(*) AS ClaimCount
             FROM DealarWarrantyClaim DWC2
             INNER JOIN DealarWarrantyClaimProduct D2
                 ON DWC2.DCWarrantyId = D2.DCWarrantyId
             LEFT JOIN Product P2
                 ON D2.ProductCode = P2.ProductCode
-            LEFT JOIN OtherProduct OP2
-                ON D2.ProductCode = CONVERT(VARCHAR, OP2.ProductCode)
             WHERE DWC2.Status = 1
               AND DWC2.WCDate >= @from_date
               AND DWC2.WCDate < DATEADD(day, 1, @to_date)
             GROUP BY
-                ISNULL(P2.PartNo, OP2.SMSCode),
-                ISNULL(P2.ProductName, OP2.ProductName)
+                P2.ProductName
             ORDER BY COUNT(*) DESC;
         """
 
@@ -317,9 +313,9 @@ class DBManager:
                 for r in rows:
                     out.append(
                         {
-                            "partCode": None if r[0] is None else str(r[0]),
-                            "partName": None if r[1] is None else str(r[1]),
-                            "claimCount": int(r[2]),
+                            # "partCode": None if r[0] is None else str(r[0]),
+                            "partName": None if r[1] is None else str(r[0]),
+                            "claimCount": int(r[1]),
                         }
                     )
                 return out

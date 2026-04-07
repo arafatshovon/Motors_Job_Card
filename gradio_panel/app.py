@@ -522,6 +522,7 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
     values = work_df[value_col].tolist()
     bar_text = [str(int(v)) if float(v).is_integer() else str(v) for v in values]  # Display values on bars
     partcodes = work_df[code_col].astype(str).tolist() if code_col else labels  # For hover
+    hover_label = "Partcode(s)" if code_col and code_col != label_col else "Part"
     
     # Reverse for horizontal bar chart (top to bottom display)
     labels = labels[::-1]
@@ -596,7 +597,7 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
         insidetextanchor='end',
         textfont=dict(color=text_colors, size=12, family='Outfit, sans-serif'),
         customdata=partcodes,
-        hovertemplate='<b>Partcode(s): %{customdata}</b><br>Total Claim Count: %{x}<extra></extra>'
+        hovertemplate=f'<b>{hover_label}: %{{customdata}}</b><br>Total Claim Count: %{{x}}<extra></extra>'
     ))
     
     # Get the title from column names
@@ -1126,6 +1127,16 @@ def fetch_top_parts(limit, from_date, to_date):
             fig = create_bar_chart(pd.DataFrame())
             return fig, f"Unexpected response format: {type(data)}"
         
+        # If the API returns a partcode column for top parts, ignore it and render by PartName only.
+        if not df.empty:
+            columns_lower = [c.lower() for c in df.columns]
+            code_col = next(
+                (col for col in df.columns if "partcode" in col.lower() or "part_code" in col.lower() or col.lower() == "code"),
+                None,
+            )
+            if code_col:
+                df = df.drop(columns=[code_col])
+
         # Create the chart
         fig = create_bar_chart(df, "Warranty Exposure Dashboard")
         
