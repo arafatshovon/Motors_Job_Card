@@ -500,20 +500,24 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
     # Ensure numeric values for sorting/gradient
     work_df[value_col] = pd.to_numeric(work_df[value_col], errors="coerce").fillna(0)
 
-    # If we have both a label and a code column, aggregate total claim count per label (part name)
-    # and keep a comma-separated list of unique part codes for hover.
-    if label_col and code_col and label_col != code_col:
-        agg = (
+    # Aggregate by part name (label_col), summing claim counts and collecting part codes for hover
+    if label_col:
+        agg_dict = {value_col: (value_col, "sum")}
+        
+        # If partcode column exists, collect unique codes for hover; otherwise just use partname
+        if code_col and label_col != code_col:
+            agg_dict["__partcodes"] = (code_col, lambda s: ", ".join(dict.fromkeys([x for x in s.tolist() if x])))
+        
+        work_df = (
             work_df.groupby(label_col, as_index=False)
-            .agg(
-                **{
-                    value_col: (value_col, "sum"),
-                    "__partcodes": (code_col, lambda s: ", ".join(dict.fromkeys([x for x in s.tolist() if x]))),
-                }
-            )
+            .agg(**agg_dict)
         )
-        work_df = agg
-        code_col = "__partcodes"
+        
+        # If we created a __partcodes column, use it for hover; otherwise use partname
+        if "__partcodes" in work_df.columns:
+            code_col = "__partcodes"
+        else:
+            code_col = None
 
     # Sort by total claim count (descending); we will reverse later for horizontal top-to-bottom display
     work_df = work_df.sort_values(by=value_col, ascending=False)
@@ -522,7 +526,7 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
     values = work_df[value_col].tolist()
     bar_text = [str(int(v)) if float(v).is_integer() else str(v) for v in values]  # Display values on bars
     partcodes = work_df[code_col].astype(str).tolist() if code_col else labels  # For hover
-    hover_label = "Partcode(s)" if code_col and code_col != label_col else "Part"
+    hover_label = "Partcode(s)" if code_col else "Part Name"
     
     # Reverse for horizontal bar chart (top to bottom display)
     labels = labels[::-1]
@@ -1156,7 +1160,7 @@ def fetch_top_parts(limit, from_date, to_date):
         return fig, f"❌ Error: {str(e)}"
 
 
-def fetch_parts_by_bike_model(limit, bike_model: str, from_date, to_date):
+def fetch_parts_for_bike_model(limit, bike_model: str, from_date, to_date):
     """Fetch top warranty parts for a specific bike model from the API."""
     try:
         # Check if bike_model is provided (required)
@@ -1857,14 +1861,14 @@ with gr.Blocks() as app:
             
             # Connect the button to the function
             fetch_btn_2.click(
-                fn=fetch_parts_by_bike_model,
+                fn=fetch_parts_for_bike_model,
                 inputs=[limit_input_2, bike_dropdown, from_date_input_2, to_date_input_2],
                 outputs=[results_chart_2, status_output_2]
             )
             
             # Also trigger on Enter key for limit input
             limit_input_2.submit(
-                fn=fetch_parts_by_bike_model,
+                fn=fetch_parts_for_bike_model,
                 inputs=[limit_input_2, bike_dropdown, from_date_input_2, to_date_input_2],
                 outputs=[results_chart_2, status_output_2]
             )
