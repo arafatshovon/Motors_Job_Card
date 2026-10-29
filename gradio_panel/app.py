@@ -1134,7 +1134,7 @@ def aggregate_parts_by_name(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def fetch_top_parts(limit, from_date, to_date):
-    """Fetch top warranty parts from the API."""
+    """Fetch top warranty parts for the results table and status message."""
     empty_table = pd.DataFrame(columns=["Part Name", "Claim Count", "Total Qty"])
     try:
         # Convert dates to string format YYYY-MM-DD
@@ -1144,8 +1144,7 @@ def fetch_top_parts(limit, from_date, to_date):
         print(to_date_str,type(to_date_str))
         # from_date is REQUIRED by the API
         if not from_date_str:
-            fig = create_bar_chart(pd.DataFrame())
-            return fig, "⚠️ Please select a From Date (required)", empty_table
+            return "⚠️ Please select a From Date (required)", empty_table
         
         # Build params - send only string values
         params = {}
@@ -1168,8 +1167,7 @@ def fetch_top_parts(limit, from_date, to_date):
         # Handle different response formats
         if isinstance(data, list):
             if len(data) == 0:
-                fig = create_bar_chart(pd.DataFrame())
-                return fig, "No data found for the given parameters.", empty_table
+                return "No data found for the given parameters.", empty_table
             df = pd.DataFrame(data)
         elif isinstance(data, dict):
             if "data" in data:
@@ -1179,8 +1177,7 @@ def fetch_top_parts(limit, from_date, to_date):
             else:
                 df = pd.DataFrame([data])
         else:
-            fig = create_bar_chart(pd.DataFrame())
-            return fig, f"Unexpected response format: {type(data)}", empty_table
+            return f"Unexpected response format: {type(data)}", empty_table
         
         # If the API returns a partcode column for top parts, ignore it and render by PartName only.
         if not df.empty:
@@ -1193,7 +1190,7 @@ def fetch_top_parts(limit, from_date, to_date):
                 df = df.drop(columns=[code_col])
 
         if df.empty:
-            return create_bar_chart(df), "No data found for the given parameters.", empty_table
+            return "No data found for the given parameters.", empty_table
 
         # Accept the API's camelCase keys and SQL-style column names.
         column_map = {col.lower().replace("_", ""): col for col in df.columns}
@@ -1206,26 +1203,22 @@ def fetch_top_parts(limit, from_date, to_date):
             source = column_map.get(key)
             table[label] = df[source] if source else None
 
-        # Create the chart
-        fig = create_bar_chart(df, "Warranty Exposure Dashboard")
+        # Bar chart disabled; display claim count and quantity in the table.
+        # fig = create_bar_chart(df, "Warranty Exposure Dashboard")
         
         status = f"✅ Top {len(df)} Warranty Claimed Parts"
         if "totalqty" not in column_map:
             status += " — Total Qty unavailable in the API response."
-        return fig, status, table
+        return status, table
         
     except requests.exceptions.ConnectionError:
-        fig = create_bar_chart(pd.DataFrame())
-        return fig, "❌ Connection Error: Could not connect to the API. Make sure the server is running.", empty_table
+        return "❌ Connection Error: Could not connect to the API. Make sure the server is running.", empty_table
     except requests.exceptions.Timeout:
-        fig = create_bar_chart(pd.DataFrame())
-        return fig, "❌ Timeout: The request took too long to complete.", empty_table
+        return "❌ Timeout: The request took too long to complete.", empty_table
     except requests.exceptions.HTTPError as e:
-        fig = create_bar_chart(pd.DataFrame())
-        return fig, f"❌ HTTP Error: {e}", empty_table
+        return f"❌ HTTP Error: {e}", empty_table
     except Exception as e:
-        fig = create_bar_chart(pd.DataFrame())
-        return fig, f"❌ Error: {str(e)}", empty_table
+        return f"❌ Error: {str(e)}", empty_table
 
 
 def fetch_parts_for_bike_model(limit, bike_model: str, from_date, to_date):
@@ -1845,16 +1838,16 @@ with gr.Blocks() as app:
                     fetch_btn_1 = gr.Button("🚀 Fetch Data", variant="primary", size="lg")
                 
                 with gr.Column(scale=3):
-                    gr.Markdown("### 📊 Visualization")
+                    gr.Markdown("### 📋 Results")
                     status_output_1 = gr.Textbox(
                         label="Status",
                         interactive=False,
                         lines=1,
                         elem_classes=["status-output"]
                     )
-                    results_chart_1 = gr.Plot(
-                        label="Top Parts Chart"
-                    )
+                    # results_chart_1 = gr.Plot(
+                    #     label="Top Parts Chart"
+                    # )
                     results_table_1 = gr.Dataframe(
                         headers=["Part Name", "Claim Count", "Total Qty"],
                         datatype=["str", "number", "number"],
@@ -1866,14 +1859,14 @@ with gr.Blocks() as app:
             fetch_btn_1.click(
                 fn=fetch_top_parts,
                 inputs=[limit_input_1, from_date_input_1, to_date_input_1],
-                outputs=[results_chart_1, status_output_1, results_table_1]
+                outputs=[status_output_1, results_table_1]
             )
             
             # Also trigger on Enter key for limit input
             limit_input_1.submit(
                 fn=fetch_top_parts,
                 inputs=[limit_input_1, from_date_input_1, to_date_input_1],
-                outputs=[results_chart_1, status_output_1, results_table_1]
+                outputs=[status_output_1, results_table_1]
             )
         
         # Tab 2: Top Parts by Bike Model
