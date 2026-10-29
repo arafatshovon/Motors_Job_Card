@@ -62,7 +62,7 @@ def checkout_api(request):
 
 @extend_schema(
     operation_id="top_warranty_parts",
-    description="Top warranty-claimed parts (partCode, partName, claimCount), queried live from SQL Server.",
+    description="Top warranty-claimed parts (partName, claimCount, totalQty), queried live from SQL Server.",
     parameters=[
         OpenApiParameter(
             name="limit",

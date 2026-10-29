@@ -324,7 +324,7 @@ class DBManager:
         Live query to SQL Server: returns top N parts by warranty-claim count.
 
         Output:
-          [{'partCode': '...', 'partName': '...', 'claimCount': 123}, ...]
+          [{'partName': '...', 'claimCount': 123, 'totalQty': 150.0}, ...]
         """
         try:
             limit = int(limit)
@@ -344,19 +344,23 @@ class DBManager:
             DECLARE @from_date DATE = ?;
             DECLARE @to_date DATE = ?;
             SELECT TOP (@limit)
-                P2.ProductName AS PartName,
-                COUNT(*) AS ClaimCount
-            FROM DealarWarrantyClaim DWC2
-            INNER JOIN DealarWarrantyClaimProduct D2
-                ON DWC2.DCWarrantyId = D2.DCWarrantyId
-            LEFT JOIN Product P2
-                ON D2.ProductCode = P2.ProductCode
-            WHERE DWC2.Status = 1
-              AND DWC2.WCDate >= @from_date
-              AND DWC2.WCDate < DATEADD(day, 1, @to_date)
-            GROUP BY
-                P2.ProductName
-            ORDER BY COUNT(*) DESC;
+            RTRIM(P.ProductName)             AS PartName,
+            COUNT(DISTINCT DWC.DCWarrantyId) AS ClaimCount,
+            SUM(D.Quantity)                  AS TotalQty,
+            SUM(ISNULL(D.UnitPrice, SP.WarrantyPrice) * D.Quantity) AS TotalCost
+            FROM DealarWarrantyClaim DWC
+            INNER JOIN DealarWarrantyClaimProduct D
+                    ON D.DCWarrantyId = DWC.DCWarrantyId
+            INNER JOIN ViewtblJobCardDetailSparepartWork SP
+                    ON SP.JobCardNo = DWC.JobCardNo AND SP.ItemCode = D.ProductCode
+            LEFT JOIN Product P
+                    ON P.ProductCode = D.ProductCode
+            WHERE DWC.WCDate >= @from_date
+            AND DWC.WCDate <  DATEADD(DAY, 1, @to_date)
+            AND DWC.ChassisNo <> ''
+            AND ISNULL(D.UnitPrice, SP.WarrantyPrice) * D.Quantity > 0
+            GROUP BY RTRIM(P.ProductName)
+            ORDER BY ClaimCount DESC, PartName;
         """
 
         max_retries = 3
@@ -375,9 +379,9 @@ class DBManager:
                 for r in rows:
                     out.append(
                         {
-                            # "partCode": None if r[0] is None else str(r[0]),
-                            "partName": None if r[1] is None else str(r[0]),
+                            "partName": None if r[0] is None else str(r[0]),
                             "claimCount": int(r[1]),
+                            "totalQty": None if r[2] is None else float(r[2]),
                         }
                     )
                 return out

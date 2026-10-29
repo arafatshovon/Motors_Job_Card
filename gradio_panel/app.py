@@ -468,6 +468,11 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
         if 'claimcount' in col or 'claim_count' in col or 'count' in col:
             value_col = columns[i]
             break
+
+    qty_col = next(
+        (col for col in columns if col.lower().replace("_", "") == "totalqty"),
+        None,
+    )
     
     # Find partname column for labels (y-axis)
     for i, col in enumerate(columns_lower):
@@ -499,10 +504,14 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
 
     # Ensure numeric values for sorting/gradient
     work_df[value_col] = pd.to_numeric(work_df[value_col], errors="coerce").fillna(0)
+    if qty_col:
+        work_df[qty_col] = pd.to_numeric(work_df[qty_col], errors="coerce")
 
     # Aggregate by part name (label_col), summing claim counts and collecting part codes for hover
     if label_col:
         agg_dict = {value_col: (value_col, "sum")}
+        if qty_col:
+            agg_dict[qty_col] = (qty_col, lambda values: values.sum(min_count=1))
         
         # If partcode column exists, collect unique codes for hover; otherwise just use partname
         if code_col and label_col != code_col:
@@ -533,6 +542,18 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
     values = values[::-1]
     bar_text = bar_text[::-1]
     partcodes = partcodes[::-1]
+    hover_data = partcodes
+    hover_template = f'<b>{hover_label}: %{{customdata}}</b><br>Total Claim Count: %{{x}}<extra></extra>'
+    if qty_col:
+        quantities = work_df[qty_col].tolist()[::-1]
+        hover_data = [
+            [part, "Unavailable" if pd.isna(qty) else f"{qty:g}"]
+            for part, qty in zip(partcodes, quantities)
+        ]
+        hover_template = (
+            f'<b>{hover_label}: %{{customdata[0]}}</b><br>'
+            'Total Claim Count: %{x}<br>Total Qty: %{customdata[1]}<extra></extra>'
+        )
     
     # Gradient colors based on claim count:
     # low -> green, mid -> yellow, high -> red
@@ -600,8 +621,8 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
         textposition='inside',
         insidetextanchor='end',
         textfont=dict(color=text_colors, size=12, family='Outfit, sans-serif'),
-        customdata=partcodes,
-        hovertemplate=f'<b>{hover_label}: %{{customdata}}</b><br>Total Claim Count: %{{x}}<extra></extra>'
+        customdata=hover_data,
+        hovertemplate=hover_template
     ))
     
     # Get the title from column names
@@ -1114,6 +1135,7 @@ def aggregate_parts_by_name(df: pd.DataFrame) -> pd.DataFrame:
 
 def fetch_top_parts(limit, from_date, to_date):
     """Fetch top warranty parts from the API."""
+    empty_table = pd.DataFrame(columns=["Part Name", "Claim Count", "Total Qty"])
     try:
         # Convert dates to string format YYYY-MM-DD
         from_date_str = convert_date_to_string(from_date)
@@ -1123,7 +1145,7 @@ def fetch_top_parts(limit, from_date, to_date):
         # from_date is REQUIRED by the API
         if not from_date_str:
             fig = create_bar_chart(pd.DataFrame())
-            return fig, "⚠️ Please select a From Date (required)"
+            return fig, "⚠️ Please select a From Date (required)", empty_table
         
         # Build params - send only string values
         params = {}
@@ -1147,7 +1169,7 @@ def fetch_top_parts(limit, from_date, to_date):
         if isinstance(data, list):
             if len(data) == 0:
                 fig = create_bar_chart(pd.DataFrame())
-                return fig, "No data found for the given parameters."
+                return fig, "No data found for the given parameters.", empty_table
             df = pd.DataFrame(data)
         elif isinstance(data, dict):
             if "data" in data:
@@ -1158,7 +1180,7 @@ def fetch_top_parts(limit, from_date, to_date):
                 df = pd.DataFrame([data])
         else:
             fig = create_bar_chart(pd.DataFrame())
-            return fig, f"Unexpected response format: {type(data)}"
+            return fig, f"Unexpected response format: {type(data)}", empty_table
         
         # If the API returns a partcode column for top parts, ignore it and render by PartName only.
         if not df.empty:
@@ -1170,23 +1192,40 @@ def fetch_top_parts(limit, from_date, to_date):
             if code_col:
                 df = df.drop(columns=[code_col])
 
+        if df.empty:
+            return create_bar_chart(df), "No data found for the given parameters.", empty_table
+
+        # Accept the API's camelCase keys and SQL-style column names.
+        column_map = {col.lower().replace("_", ""): col for col in df.columns}
+        table = pd.DataFrame(index=df.index)
+        for key, label in (
+            ("partname", "Part Name"),
+            ("claimcount", "Claim Count"),
+            ("totalqty", "Total Qty"),
+        ):
+            source = column_map.get(key)
+            table[label] = df[source] if source else None
+
         # Create the chart
         fig = create_bar_chart(df, "Warranty Exposure Dashboard")
         
-        return fig, f"✅ Top {len(df)} Warranty Claimed Parts"
+        status = f"✅ Top {len(df)} Warranty Claimed Parts"
+        if "totalqty" not in column_map:
+            status += " — Total Qty unavailable in the API response."
+        return fig, status, table
         
     except requests.exceptions.ConnectionError:
         fig = create_bar_chart(pd.DataFrame())
-        return fig, "❌ Connection Error: Could not connect to the API. Make sure the server is running."
+        return fig, "❌ Connection Error: Could not connect to the API. Make sure the server is running.", empty_table
     except requests.exceptions.Timeout:
         fig = create_bar_chart(pd.DataFrame())
-        return fig, "❌ Timeout: The request took too long to complete."
+        return fig, "❌ Timeout: The request took too long to complete.", empty_table
     except requests.exceptions.HTTPError as e:
         fig = create_bar_chart(pd.DataFrame())
-        return fig, f"❌ HTTP Error: {e}"
+        return fig, f"❌ HTTP Error: {e}", empty_table
     except Exception as e:
         fig = create_bar_chart(pd.DataFrame())
-        return fig, f"❌ Error: {str(e)}"
+        return fig, f"❌ Error: {str(e)}", empty_table
 
 
 def fetch_parts_for_bike_model(limit, bike_model: str, from_date, to_date):
@@ -1816,19 +1855,25 @@ with gr.Blocks() as app:
                     results_chart_1 = gr.Plot(
                         label="Top Parts Chart"
                     )
+                    results_table_1 = gr.Dataframe(
+                        headers=["Part Name", "Claim Count", "Total Qty"],
+                        datatype=["str", "number", "number"],
+                        label="Top Parts — Claim Count and Total Qty",
+                        interactive=False,
+                    )
             
             # Connect the button to the function
             fetch_btn_1.click(
                 fn=fetch_top_parts,
                 inputs=[limit_input_1, from_date_input_1, to_date_input_1],
-                outputs=[results_chart_1, status_output_1]
+                outputs=[results_chart_1, status_output_1, results_table_1]
             )
             
             # Also trigger on Enter key for limit input
             limit_input_1.submit(
                 fn=fetch_top_parts,
                 inputs=[limit_input_1, from_date_input_1, to_date_input_1],
-                outputs=[results_chart_1, status_output_1]
+                outputs=[results_chart_1, status_output_1, results_table_1]
             )
         
         # Tab 2: Top Parts by Bike Model
