@@ -4,9 +4,9 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: "motors-job-card"
-    command: "python manage.py runserver 0.0.0.0:${PORT:-9001}"
+    command: "python manage.py runserver 0.0.0.0:${PORT:-9003}"
     ports:
-      - "${PORT:-9001}:${PORT:-9001}"
+      - "${PORT:-9003}:${PORT:-9003}"
     restart: unless-stopped
     volumes:
       - ./app/cluster_data:/app/cluster_data
@@ -36,4 +36,4 @@ services:
       - motors_job_card
     environment:
       - API_HOST=motors-job-card
-      - API_PORT=${PORT:-9001}
+      - API_PORT=${PORT:-9003}

@@ -72,8 +72,8 @@ class DBManager:
             Server={server},{port};
             Trusted_Connection=no;
             Database={database};
-            UID=sa;
-            PWD=dataport;"""
+            UID=YamMot;
+            PWD=PWDMS56rMC#!;"""
         )
 
         print("********** DB Connected **********")

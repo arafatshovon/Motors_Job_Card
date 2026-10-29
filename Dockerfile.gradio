@@ -12,7 +12,8 @@ RUN pip install --upgrade pip
 
 # Copy requirements and install dependencies
 COPY gradio_panel/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --no-compile -r requirements.txt
 
 # Copy the gradio app
 COPY gradio_panel/app.py .
