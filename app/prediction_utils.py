@@ -190,12 +190,21 @@ def preprocess_warranty_data(
         df_monthly_enhanced["month"].astype(str) + "-01"
     )
 
-    # Fill missing months
-    df_monthly_enhanced_filled = (
-        df_monthly_enhanced
-        .groupby(["ProductName", "BikeModel", "RegionName"], group_keys=False)
-        .apply(_fill_missing_months_enhanced)
-    )
+    # Fill each time series explicitly. Pandas 3 excludes grouping columns from
+    # DataFrameGroupBy.apply, but the fill function needs those columns to restore
+    # the series labels after reindexing.
+    group_columns = ["ProductName", "BikeModel", "RegionName"]
+    filled_groups = []
+    for group_keys, group_df in df_monthly_enhanced.groupby(group_columns, sort=False):
+        filled_group = _fill_missing_months_enhanced(group_df.copy())
+        for column, value in zip(group_columns, group_keys):
+            filled_group[column] = value
+        filled_groups.append(filled_group)
+
+    if filled_groups:
+        df_monthly_enhanced_filled = pd.concat(filled_groups, ignore_index=True)
+    else:
+        df_monthly_enhanced_filled = df_monthly_enhanced.copy()
 
     # Add lag and rolling features
     df_monthly_enhanced_filled = _add_lag_and_rolling_features(df_monthly_enhanced_filled)
