@@ -73,38 +73,75 @@ def get_bike_model(bike_name: str) -> str:
     return BIKE_VARIANT_TO_MODEL.get(bike_name, 'Other')
 
 
-def preprocess_warranty_data(warranty_data_path: str = None, save_path: str = None) -> pd.DataFrame:
+def preprocess_warranty_data(
+    warranty_data_path: str = None,
+    save_path: str = None,
+    source_df: pd.DataFrame = None,
+    end_exclusive=None,
+) -> pd.DataFrame:
     """
     Preprocess warranty_data.csv into df_monthly_enhanced_filled.
 
     Args:
-        warranty_data_path: Path to warranty_data.csv (default: TEST_DIR/warranty_data.csv)
-        save_path: Path to save the processed data (default: CLUSTER_DATA_DIR/df_monthly_enhanced_filled.csv)
+        warranty_data_path: Path to warranty_data.csv (default: cluster_data/warranty_data.csv)
+        save_path: Optional path to save the processed data. CSV input defaults to the
+            enhanced-data path; DataFrame input is processed in memory by default.
+        source_df: Optional live warranty rows from the database.
+        end_exclusive: Optional exclusive cutoff date for warranty dates.
 
     Returns:
         DataFrame with monthly enhanced features
     """
-    if warranty_data_path is None:
-        warranty_data_path = WARRANTY_DATA_PATH
-    if save_path is None:
-        save_path = ENHANCED_DATA_PATH
+    if source_df is None:
+        if warranty_data_path is None:
+            warranty_data_path = WARRANTY_DATA_PATH
+        if save_path is None:
+            save_path = ENHANCED_DATA_PATH
+        warranty_data_full = pd.read_csv(warranty_data_path)
+    else:
+        warranty_data_full = source_df.copy()
 
-    # Load warranty data
-    warranty_data_full = pd.read_csv(warranty_data_path)
+    # Map the DBManager field names to the names used by the model's training data.
+    source_columns = {str(column).lower(): column for column in warranty_data_full.columns}
+    column_aliases = {
+        "RegionName": "region",
+        "WCDate": "warranty_date",
+        "ProductCode": "part_code",
+        "ProductName": "product_name",
+        "BikeName": "bike_model",
+        "InvoiceDate": "inv_date",
+        "Mileage": "mileage",
+        "TotalCost": "total_cost",
+    }
+    for target, alias in column_aliases.items():
+        if target not in warranty_data_full.columns and alias in source_columns:
+            warranty_data_full = warranty_data_full.rename(
+                columns={source_columns[alias]: target}
+            )
 
     # Rename column if needed
-    if 'InvoiceDetails' in warranty_data_full.columns:
+    if 'InvoiceDetails' in warranty_data_full.columns and 'InvoiceDate' not in warranty_data_full.columns:
         warranty_data_full = warranty_data_full.rename(columns={'InvoiceDetails': 'InvoiceDate'})
 
-    # Add bike model
-    warranty_data_full['BikeModel'] = warranty_data_full['BikeName'].apply(get_bike_model)
+    # Add the model group from the sold bike variant when only its name is available.
+    if 'BikeName' in warranty_data_full.columns:
+        warranty_data_full['BikeModel'] = warranty_data_full['BikeName'].apply(get_bike_model)
+    elif 'BikeModel' not in warranty_data_full.columns:
+        raise ValueError("Warranty data must include BikeName or BikeModel")
 
     # Create enhanced dataset
     warranty_enhanced = warranty_data_full.copy()
 
     # Convert dates
-    warranty_enhanced['WCDate'] = pd.to_datetime(warranty_enhanced['WCDate'])
-    warranty_enhanced['InvoiceDate'] = pd.to_datetime(warranty_enhanced['InvoiceDate'])
+    warranty_enhanced['WCDate'] = pd.to_datetime(warranty_enhanced['WCDate'], errors='coerce')
+    warranty_enhanced['InvoiceDate'] = pd.to_datetime(warranty_enhanced['InvoiceDate'], errors='coerce')
+    if end_exclusive is not None:
+        warranty_enhanced = warranty_enhanced[
+            warranty_enhanced['WCDate'] < pd.Timestamp(end_exclusive)
+        ]
+    warranty_enhanced = warranty_enhanced.dropna(
+        subset=['WCDate', 'InvoiceDate', 'ProductCode', 'ProductName', 'BikeModel', 'RegionName']
+    )
 
     # Calculate bike age in months
     warranty_enhanced['BikeAgeMonths'] = (
@@ -114,6 +151,9 @@ def preprocess_warranty_data(warranty_data_path: str = None, save_path: str = No
     # Clean Mileage
     warranty_enhanced['Mileage'] = warranty_enhanced['Mileage'].astype(str).str.replace(r'[^\d.]', '', regex=True)
     warranty_enhanced['Mileage'] = pd.to_numeric(warranty_enhanced['Mileage'], errors='coerce').fillna(0)
+    warranty_enhanced['TotalCost'] = pd.to_numeric(
+        warranty_enhanced['TotalCost'], errors='coerce'
+    ).fillna(0)
 
     # Extract time features
     warranty_enhanced['year'] = warranty_enhanced['WCDate'].dt.year
@@ -163,9 +203,12 @@ def preprocess_warranty_data(warranty_data_path: str = None, save_path: str = No
     # Drop rows with NaN values
     df_model_enhanced = df_monthly_enhanced_filled.dropna().reset_index(drop=True)
 
-    # Save to cluster_data
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    df_model_enhanced.to_csv(save_path, index=False)
+    # Save CSV-based preprocessing as before; live DB preprocessing stays in memory.
+    if save_path:
+        save_directory = os.path.dirname(save_path)
+        if save_directory:
+            os.makedirs(save_directory, exist_ok=True)
+        df_model_enhanced.to_csv(save_path, index=False)
 
     return df_model_enhanced
 
@@ -276,7 +319,8 @@ def batch_recursive_forecast(
     regions: list,
     n_months: int = 6,
     feature_columns: list = None,
-    cat_features: list = None
+    cat_features: list = None,
+    forecast_start=None,
 ) -> pd.DataFrame:
     """
     Efficiently forecast using batch prediction with vectorized operations.
@@ -295,7 +339,11 @@ def batch_recursive_forecast(
         DataFrame with predictions
     """
     latest_date = df_historical['date'].max()
-    future_dates = pd.date_range(start=latest_date + pd.DateOffset(months=1), periods=n_months, freq='MS')
+    if forecast_start is None:
+        forecast_start = latest_date + pd.DateOffset(months=1)
+    else:
+        forecast_start = pd.Timestamp(forecast_start).to_period('M').to_timestamp()
+    future_dates = pd.date_range(start=forecast_start, periods=n_months, freq='MS')
 
     # Get last data for each combination
     last_data = (
@@ -506,7 +554,13 @@ def get_predictions_for_next_months(n_months: int = 6, top_n_bike_models: int = 
     return result
 
 
-def get_detailed_predictions(n_months: int = 6, top_n_bike_models: int = 20, top_n_parts: int = 20) -> dict:
+def get_detailed_predictions(
+    n_months: int = 6,
+    top_n_bike_models: int = 20,
+    top_n_parts: int = 20,
+    source_df: pd.DataFrame = None,
+    forecast_start=None,
+) -> dict:
     """
     Get detailed predictions DataFrame in Gradio-compatible format.
 
@@ -518,12 +572,24 @@ def get_detailed_predictions(n_months: int = 6, top_n_bike_models: int = 20, top
     feature_columns = metadata['feature_columns']
     cat_features = metadata['categorical_features']
 
-    # Load enhanced data
-    if not os.path.exists(ENHANCED_DATA_PATH):
+    # Prefer fresh DB rows when supplied by the API. The CSV remains a fallback for
+    # callers outside the live API path.
+    if source_df is not None:
+        df_enhanced = preprocess_warranty_data(
+            source_df=source_df,
+            end_exclusive=forecast_start,
+        )
+    elif not os.path.exists(ENHANCED_DATA_PATH):
         df_enhanced = preprocess_warranty_data()
     else:
         df_enhanced = pd.read_csv(ENHANCED_DATA_PATH)
         df_enhanced['date'] = pd.to_datetime(df_enhanced['date'])
+
+    if forecast_start is not None:
+        forecast_start = pd.Timestamp(forecast_start).to_period('M').to_timestamp()
+        df_enhanced = df_enhanced[df_enhanced['date'] < forecast_start].copy()
+    if df_enhanced.empty:
+        raise ValueError("No historical warranty data is available before the forecast start month")
 
     # Get top bike models and parts
     top_bike_models = (
@@ -555,7 +621,8 @@ def get_detailed_predictions(n_months: int = 6, top_n_bike_models: int = 20, top
         regions=all_regions,
         n_months=n_months,
         feature_columns=feature_columns,
-        cat_features=cat_features
+        cat_features=cat_features,
+        forecast_start=forecast_start,
     )
 
     # Select columns for output

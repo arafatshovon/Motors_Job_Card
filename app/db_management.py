@@ -242,6 +242,68 @@ class DBManager:
 
     def get_converted_warranty_df(self) -> pd.DataFrame:
         return self.converted_warranty_df
+
+    def get_warranty_data_df(self) -> pd.DataFrame:
+        """Return the current in-memory SQL warranty rows in model input columns."""
+        return self.__get_warranty_df_from_db()
+
+    def get_monthly_warranty_claim_counts(
+        self,
+        from_date: date,
+        to_date_exclusive: date,
+    ) -> List[dict]:
+        """Fetch monthly claimed-part counts for the half-open date range [from, to)."""
+        if from_date is None or to_date_exclusive is None:
+            raise ValueError("Both from_date and to_date_exclusive are required")
+        if to_date_exclusive <= from_date:
+            raise ValueError("to_date_exclusive must be later than from_date")
+
+        sql = """
+            SELECT
+                DATEFROMPARTS(YEAR(DWC.WCDate), MONTH(DWC.WCDate), 1) AS ClaimMonth,
+                COUNT(*) AS ClaimCount
+            FROM DealarWarrantyClaim DWC
+            INNER JOIN DealarWarrantyClaimProduct DWCP
+                ON DWC.DCWarrantyId = DWCP.DCWarrantyId
+            WHERE DWC.Status = 1
+              AND DWC.WCDate >= ?
+              AND DWC.WCDate < ?
+            GROUP BY YEAR(DWC.WCDate), MONTH(DWC.WCDate)
+            ORDER BY YEAR(DWC.WCDate), MONTH(DWC.WCDate);
+        """
+
+        max_retries = 3
+        retries = 0
+        cursor = None
+
+        while retries < max_retries:
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(sql, (from_date, to_date_exclusive))
+                rows = cursor.fetchall()
+                cursor.close()
+                cursor = None
+
+                return [
+                    {
+                        "date": row[0].strftime("%Y-%m-%d"),
+                        "ClaimCount": int(row[1] or 0),
+                    }
+                    for row in rows
+                ]
+            except Exception as e:
+                if cursor:
+                    cursor.close()
+                    cursor = None
+                print(
+                    f"******* {retries + 1}. Failed to fetch monthly warranty claims: "
+                    f"{e.__class__.__name__} | {e}"
+                )
+                time.sleep(1)
+                self._reconnect_to_db()
+                retries += 1
+
+        raise DataRetrievalError("FAILED TO FETCH MONTHLY WARRANTY CLAIMS EVEN AFTER RETRYING")
     
     def get_sales_df_for_chassis(self, chassis: str) -> pd.DataFrame:
         try:

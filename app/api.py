@@ -4,6 +4,8 @@ from rest_framework.response import Response
 
 from typing import Optional
 from datetime import date
+from dateutil.relativedelta import relativedelta
+from django.utils import timezone
 
 from app.db_management import db_manager
 from app.views import jobquery
@@ -468,7 +470,8 @@ def predict_warranty_parts_api(request):
     operation_id="predict_warranty_parts_detailed",
     description=(
         "Get detailed warranty parts failure predictions for each combination of "
-        "ProductName, BikeModel, and RegionName. Returns data in Gradio-compatible format."
+        "ProductName, BikeModel, and RegionName, with live monthly actuals for the five "
+        "completed months before the current month. Forecasts begin in the current month."
     ),
     parameters=[
         OpenApiParameter(
@@ -512,7 +515,7 @@ def predict_warranty_parts_detailed_api(request):
     top_parts_raw = request.query_params.get("top_parts", "20")
 
     try:
-        months = min(int(months_raw), 12)
+        months = max(1, min(int(months_raw), 12))
     except Exception:
         return Response(
             {"ret": False, "data": None, "error": f"Invalid 'months' query param: {months_raw}"},
@@ -536,11 +539,32 @@ def predict_warranty_parts_detailed_api(request):
         )
 
     try:
+        current_month_start = timezone.localdate().replace(day=1)
+        history_start = current_month_start - relativedelta(months=5)
+        history_rows = db_manager.get_monthly_warranty_claim_counts(
+            from_date=history_start,
+            to_date_exclusive=current_month_start,
+        )
+
         data = get_detailed_predictions(
             n_months=months,
             top_n_bike_models=top_bike_models,
-            top_n_parts=top_parts
+            top_n_parts=top_parts,
+            source_df=db_manager.get_warranty_data_df(),
+            forecast_start=current_month_start,
         )
+        data["historical"] = {
+            "columns": ["date", "ClaimCount"],
+            "data": [[row["date"], row["ClaimCount"]] for row in history_rows],
+        }
+        data["history_period"] = {
+            "start": history_start.isoformat(),
+            "end": (current_month_start - relativedelta(days=1)).isoformat(),
+        }
+        data["forecast_period"] = {
+            "start": current_month_start.isoformat(),
+            "end": (current_month_start + relativedelta(months=months - 1)).isoformat(),
+        }
         return Response({"ret": True, "data": data, "error": None})
     except FileNotFoundError as e:
         return Response(

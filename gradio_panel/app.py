@@ -751,7 +751,7 @@ def create_prediction_line_chart(history_df: pd.DataFrame, pred_df: pd.DataFrame
 
     fig.update_layout(
         title=dict(
-            text="<b>1-Year Warranty Parts Forecast (6 Months Historical + 6 Months Predicted)</b>",
+            text="<b>11-Month Warranty Parts Forecast (5 Months Historical + 6 Months Predicted)</b>",
             font=dict(size=18, color="#1e293b"),
             x=0.5,
             xanchor="center",
@@ -886,17 +886,17 @@ def fetch_prediction_dashboard(top_n_parts):
             top_n_parts = 10
         top_n_parts = max(1, int(top_n_parts))
 
-        cwd = os.getcwd()
-
         response = requests.get(API_URL_PREDICTION_DETAILED, timeout=60)
         response.raise_for_status()
         payload = response.json()
 
         df_pred = pd.DataFrame()
+        historical_block = None
         if isinstance(payload, dict) and "data" in payload:
             data_block = payload["data"]
             if isinstance(data_block, dict) and "columns" in data_block and "data" in data_block:
                 df_pred = pd.DataFrame(data_block["data"], columns=data_block["columns"])
+                historical_block = data_block.get("historical")
             elif isinstance(data_block, list):
                 df_pred = pd.DataFrame(data_block)
         elif isinstance(payload, list):
@@ -924,7 +924,7 @@ def fetch_prediction_dashboard(top_n_parts):
         df_pred["month"] = df_pred["date"].dt.to_period("M").dt.to_timestamp()
 
         pred_start = df_pred["month"].min()
-        pred_end = pred_start + pd.DateOffset(months=5)
+        pred_end = df_pred["month"].max()
         pred_range_df = df_pred[(df_pred["month"] >= pred_start) & (df_pred["month"] <= pred_end)]
 
         pred_monthly = (
@@ -938,14 +938,42 @@ def fetch_prediction_dashboard(top_n_parts):
             .rename(columns={"index": "month", "PredictedClaimCount": "count"})
         )
 
-        # Resolve after prediction call because the CSV is created on first run.
-        latest_csv_path = resolve_enhanced_data_path()
-        historical_df = load_historical_monthly_data(latest_csv_path)
+        historical_df = pd.DataFrame()
+        if isinstance(historical_block, dict):
+            if "columns" in historical_block and "data" in historical_block:
+                historical_df = pd.DataFrame(
+                    historical_block["data"],
+                    columns=historical_block["columns"],
+                )
+            elif isinstance(historical_block.get("data"), list):
+                historical_df = pd.DataFrame(historical_block["data"])
+
         history_monthly = pd.DataFrame()
         history_note = ""
         if historical_df is not None and not historical_df.empty:
-            hist_end = pred_start - pd.DateOffset(months=1)
-            hist_start = hist_end - pd.DateOffset(months=5)
+            if "date" not in historical_df.columns:
+                history_note = "⚠️ Historical query response is missing its date column."
+                historical_df = pd.DataFrame()
+            else:
+                historical_df["date"] = pd.to_datetime(historical_df["date"], errors="coerce")
+                historical_df = historical_df.dropna(subset=["date"])
+            if not historical_df.empty:
+                claim_count_col = next(
+                    (col for col in historical_df.columns if col.lower() == "claimcount"),
+                    None,
+                )
+                if claim_count_col is None:
+                    history_note = "⚠️ Historical query response is missing ClaimCount."
+                    historical_df = pd.DataFrame()
+                else:
+                    historical_df["ClaimCount"] = pd.to_numeric(
+                        historical_df[claim_count_col], errors="coerce"
+                    ).fillna(0)
+
+        hist_start = pred_start - pd.DateOffset(months=5)
+        hist_end = pred_start - pd.DateOffset(months=1)
+        history_index = pd.date_range(hist_start, hist_end, freq="MS")
+        if historical_df is not None and not historical_df.empty:
             historical_df["month"] = historical_df["date"].dt.to_period("M").dt.to_timestamp()
             historical_range = historical_df[
                 (historical_df["month"] >= hist_start) & (historical_df["month"] <= hist_end)
@@ -953,18 +981,18 @@ def fetch_prediction_dashboard(top_n_parts):
             history_monthly = (
                 historical_range.groupby("month", as_index=False)["ClaimCount"].sum()
             )
-            history_index = pd.date_range(hist_start, hist_end, freq="MS")
             history_monthly = (
                 history_monthly.set_index("month")
                 .reindex(history_index, fill_value=0)
                 .reset_index()
                 .rename(columns={"index": "month", "ClaimCount": "count"})
             )
+            if historical_range.empty and not history_note:
+                history_note = "⚠️ No historical monthly claims were returned for this period."
         else:
-            history_note = (
-                f"⚠️ Historical file not found. cwd={cwd}, resolved={latest_csv_path}, "
-                f"exists={os.path.exists(latest_csv_path)}"
-            )
+            history_monthly = pd.DataFrame({"month": history_index, "count": 0})
+            if not history_note:
+                history_note = "⚠️ No historical monthly data was returned by the database query."
 
         line_chart = create_prediction_line_chart(history_monthly, pred_monthly)
         bar_chart = create_predicted_parts_bar_chart(pred_range_df, top_n=top_n_parts)
@@ -972,7 +1000,8 @@ def fetch_prediction_dashboard(top_n_parts):
 
         status = (
             f"✅ Loaded {len(df_pred)} prediction rows. Top N parts = {top_n_parts}. "
-            f"cwd={cwd}"
+            f"History: {hist_start:%b %Y}–{hist_end:%b %Y}; "
+            f"prediction: {pred_start:%b %Y}–{pred_end:%b %Y}."
         )
         if history_note:
             status = f"{status} {history_note}"
