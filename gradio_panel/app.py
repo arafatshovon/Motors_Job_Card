@@ -1,7 +1,7 @@
-import gradio as gr
-import requests
-import pandas as pd
-import plotly.graph_objects as go
+import gradio as gr #type:ignore
+import requests #type:ignore
+import pandas as pd #type:ignore
+import plotly.graph_objects as go #type:ignore
 import os
 import json
 import re
@@ -500,20 +500,24 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
     # Ensure numeric values for sorting/gradient
     work_df[value_col] = pd.to_numeric(work_df[value_col], errors="coerce").fillna(0)
 
-    # If we have both a label and a code column, aggregate total claim count per label (part name)
-    # and keep a comma-separated list of unique part codes for hover.
-    if label_col and code_col and label_col != code_col:
-        agg = (
+    # Aggregate by part name (label_col), summing claim counts and collecting part codes for hover
+    if label_col:
+        agg_dict = {value_col: (value_col, "sum")}
+        
+        # If partcode column exists, collect unique codes for hover; otherwise just use partname
+        if code_col and label_col != code_col:
+            agg_dict["__partcodes"] = (code_col, lambda s: ", ".join(dict.fromkeys([x for x in s.tolist() if x])))
+        
+        work_df = (
             work_df.groupby(label_col, as_index=False)
-            .agg(
-                **{
-                    value_col: (value_col, "sum"),
-                    "__partcodes": (code_col, lambda s: ", ".join(dict.fromkeys([x for x in s.tolist() if x]))),
-                }
-            )
+            .agg(**agg_dict)
         )
-        work_df = agg
-        code_col = "__partcodes"
+        
+        # If we created a __partcodes column, use it for hover; otherwise use partname
+        if "__partcodes" in work_df.columns:
+            code_col = "__partcodes"
+        else:
+            code_col = None
 
     # Sort by total claim count (descending); we will reverse later for horizontal top-to-bottom display
     work_df = work_df.sort_values(by=value_col, ascending=False)
@@ -522,6 +526,7 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
     values = work_df[value_col].tolist()
     bar_text = [str(int(v)) if float(v).is_integer() else str(v) for v in values]  # Display values on bars
     partcodes = work_df[code_col].astype(str).tolist() if code_col else labels  # For hover
+    hover_label = "Partcode(s)" if code_col else "Part Name"
     
     # Reverse for horizontal bar chart (top to bottom display)
     labels = labels[::-1]
@@ -596,7 +601,7 @@ def create_bar_chart(df, title="Warranty Exposure Dashboard"):
         insidetextanchor='end',
         textfont=dict(color=text_colors, size=12, family='Outfit, sans-serif'),
         customdata=partcodes,
-        hovertemplate='<b>Partcode(s): %{customdata}</b><br>Total Claim Count: %{x}<extra></extra>'
+        hovertemplate=f'<b>{hover_label}: %{{customdata}}</b><br>Total Claim Count: %{{x}}<extra></extra>'
     ))
     
     # Get the title from column names
@@ -1155,6 +1160,16 @@ def fetch_top_parts(limit, from_date, to_date):
             fig = create_bar_chart(pd.DataFrame())
             return fig, f"Unexpected response format: {type(data)}"
         
+        # If the API returns a partcode column for top parts, ignore it and render by PartName only.
+        if not df.empty:
+            columns_lower = [c.lower() for c in df.columns]
+            code_col = next(
+                (col for col in df.columns if "partcode" in col.lower() or "part_code" in col.lower() or col.lower() == "code"),
+                None,
+            )
+            if code_col:
+                df = df.drop(columns=[code_col])
+
         # Create the chart
         fig = create_bar_chart(df, "Warranty Exposure Dashboard")
         
@@ -1174,7 +1189,7 @@ def fetch_top_parts(limit, from_date, to_date):
         return fig, f"❌ Error: {str(e)}"
 
 
-def fetch_parts_by_bike_model(limit, bike_model: str, from_date, to_date):
+def fetch_parts_for_bike_model(limit, bike_model: str, from_date, to_date):
     """Fetch top warranty parts for a specific bike model from the API."""
     try:
         # Check if bike_model is provided (required)
@@ -1220,14 +1235,21 @@ def fetch_parts_by_bike_model(limit, bike_model: str, from_date, to_date):
             fig = create_bar_chart(pd.DataFrame())
             return fig, f"Unexpected response format: {type(data)}"
 
-        df = aggregate_parts_by_name(df)
+        # If the API returns a partcode column for parts-by-bike-model, ignore it and render by PartName only.
+        if not df.empty:
+            code_col = next(
+                (col for col in df.columns if "partcode" in col.lower() or "part_code" in col.lower() or col.lower() == "code"),
+                None,
+            )
+            if code_col:
+                df = df.drop(columns=[code_col])
         
         # Create the chart with bike model in title
         display_label = bike_model
         chart_title = f"Top Parts for {display_label}" if display_label else "Top Parts by Bike Model"
         fig = create_bar_chart(df, chart_title)
 
-        status = f"✅ Aggregated parts for {display_label}"
+        status = f"✅ Parts for {display_label}"
 
         return fig, status
         
@@ -1394,9 +1416,10 @@ def create_failure_ratio_chart(df: pd.DataFrame, title: str = "Bike Model Failur
     return fig
 
 
-def fetch_failure_ratio(limit):
+def fetch_failure_ratio():
     """Fetch bike model failure ratios from the API."""
     try:
+        limit = 100
         params = {}
         if limit is not None and limit != "" and limit != 0:
             params["limit"] = int(limit)
@@ -1427,7 +1450,7 @@ def fetch_failure_ratio(limit):
             aggregated_df,
             "Bike Model Failure Ratio (Unique Failed Chassis / Bikes Sold)",
         )
-        return fig, f"✅ Loaded {len(aggregated_df)} bike models"
+        return fig, f""
 
     except requests.exceptions.ConnectionError:
         fig = create_failure_ratio_chart(pd.DataFrame())
@@ -1867,14 +1890,14 @@ with gr.Blocks() as app:
             
             # Connect the button to the function
             fetch_btn_2.click(
-                fn=fetch_parts_by_bike_model,
+                fn=fetch_parts_for_bike_model,
                 inputs=[limit_input_2, bike_dropdown, from_date_input_2, to_date_input_2],
                 outputs=[results_chart_2, status_output_2]
             )
             
             # Also trigger on Enter key for limit input
             limit_input_2.submit(
-                fn=fetch_parts_by_bike_model,
+                fn=fetch_parts_for_bike_model,
                 inputs=[limit_input_2, bike_dropdown, from_date_input_2, to_date_input_2],
                 outputs=[results_chart_2, status_output_2]
             )
@@ -1885,12 +1908,12 @@ with gr.Blocks() as app:
                 with gr.Column(scale=1):
                     gr.Markdown("### ⚙️ Query Parameters")
 
-                    limit_input_3 = gr.Number(
-                        label="📊 Limit (optional)",
-                        value=None,
-                        step=1,
-                        info="Number of bike models to fetch (leave empty for default)",
-                    )
+                    # limit_input_3 = gr.Number(
+                    #     label="📊 Limit (optional)",
+                    #     value=None,
+                    #     step=1,
+                    #     info="Number of bike models to fetch (leave empty for default)",
+                    # )
 
                     fetch_btn_3 = gr.Button("🚀 Fetch Data", variant="primary", size="lg")
 
@@ -1906,15 +1929,15 @@ with gr.Blocks() as app:
 
             fetch_btn_3.click(
                 fn=fetch_failure_ratio,
-                inputs=[limit_input_3],
+                inputs=[],
                 outputs=[results_chart_3, status_output_3],
             )
 
-            limit_input_3.submit(
-                fn=fetch_failure_ratio,
-                inputs=[limit_input_3],
-                outputs=[results_chart_3, status_output_3],
-            )
+            # limit_input_3.submit(
+            #     fn=fetch_failure_ratio,
+            #     inputs=[limit_input_3],
+            #     outputs=[results_chart_3, status_output_3],
+            # )
 
         # Tab 4: Prediction Dashboard (6 Months)
         with gr.TabItem("🔮 Prediction (6 Months)"):
