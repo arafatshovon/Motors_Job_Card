@@ -396,116 +396,116 @@ class DBManager:
 
         raise DataRetrievalError("FAILED TO FETCH TOP WARRANTY PARTS EVEN AFTER RETRYING")
 
-    def get_top_warranty_parts_by_bike_model(
-        self,
-        limit: int = 30,
-        from_date: Optional[date] = None,
-        to_date: Optional[date] = None,
-    ) -> List[dict]:
-        """
-        Live query to SQL Server: returns top N parts overall, broken down by bike model.
+    # def get_top_warranty_parts_by_bike_model(
+    #     self,
+    #     limit: int = 30,
+    #     from_date: Optional[date] = None,
+    #     to_date: Optional[date] = None,
+    # ) -> List[dict]:
+    #     """
+    #     Live query to SQL Server: returns top N parts overall, broken down by bike model.
 
-        Output (flat rows):
-          [{'partCode': '...', 'partName': '...', 'bikeModel': '...', 'claimCount': 123}, ...]
-        """
-        try:
-            limit = int(limit)
-        except Exception:
-            limit = 30
-        limit = max(1, min(limit, 200))
+    #     Output (flat rows):
+    #       [{'partCode': '...', 'partName': '...', 'bikeModel': '...', 'claimCount': 123}, ...]
+    #     """
+    #     try:
+    #         limit = int(limit)
+    #     except Exception:
+    #         limit = 30
+    #     limit = max(1, min(limit, 200))
 
-        if from_date is None:
-            raise ValueError("Missing required parameter: from_date")
-        if to_date is None:
-            to_date = date.today()
-        if to_date < from_date:
-            raise ValueError("Invalid date range: to_date must be >= from_date")
+    #     if from_date is None:
+    #         raise ValueError("Missing required parameter: from_date")
+    #     if to_date is None:
+    #         to_date = date.today()
+    #     if to_date < from_date:
+    #         raise ValueError("Invalid date range: to_date must be >= from_date")
 
-        # Note: bike model is derived from the bike product sold for the chassis (invoice details -> Product BP).
-        sql = """
-            DECLARE @limit_parts INT = ?;
-            DECLARE @from_date DATE = ?;
-            DECLARE @to_date DATE = ?;
+    #     # Note: bike model is derived from the bike product sold for the chassis (invoice details -> Product BP).
+    #     sql = """
+    #         DECLARE @limit_parts INT = ?;
+    #         DECLARE @from_date DATE = ?;
+    #         DECLARE @to_date DATE = ?;
 
-            WITH Base AS (
-                SELECT
-                    ISNULL(P2.PartNo, OP2.SMSCode) AS PartCode,
-                    ISNULL(P2.ProductName, OP2.ProductName) AS PartName,
-                    BP.ProductName AS BikeModel
-                FROM DealarWarrantyClaim DWC2
-                INNER JOIN DealarWarrantyClaimProduct D2
-                    ON DWC2.DCWarrantyId = D2.DCWarrantyId
-                LEFT JOIN Product P2
-                    ON D2.ProductCode = P2.ProductCode
-                LEFT JOIN OtherProduct OP2
-                    ON D2.ProductCode = CONVERT(VARCHAR, OP2.ProductCode)
-                INNER JOIN DealarInvoiceDetails DID
-                    ON DWC2.ChassisNo = DID.ChassisNo
-                INNER JOIN Product BP
-                    ON DID.ProductCode = BP.ProductCode
-                WHERE DWC2.Status = 1
-                  AND DWC2.WCDate >= @from_date
-                  AND DWC2.WCDate < DATEADD(day, 1, @to_date)
-            ),
-            TopParts AS (
-                SELECT TOP (@limit_parts)
-                    PartCode,
-                    PartName,
-                    COUNT(*) AS TotalCount
-                FROM Base
-                GROUP BY PartCode, PartName
-                ORDER BY COUNT(*) DESC
-            )
-            SELECT
-                b.PartCode,
-                b.PartName,
-                b.BikeModel,
-                COUNT(*) AS ClaimCount,
-                tp.TotalCount AS TotalCount
-            FROM Base b
-            INNER JOIN TopParts tp
-                ON b.PartCode = tp.PartCode
-               AND b.PartName = tp.PartName
-            GROUP BY b.PartCode, b.PartName, b.BikeModel, tp.TotalCount
-            ORDER BY tp.TotalCount DESC, b.PartCode ASC, ClaimCount DESC, b.BikeModel ASC;
-        """
+    #         WITH Base AS (
+    #             SELECT
+    #                 ISNULL(P2.PartNo, OP2.SMSCode) AS PartCode,
+    #                 ISNULL(P2.ProductName, OP2.ProductName) AS PartName,
+    #                 BP.ProductName AS BikeModel
+    #             FROM DealarWarrantyClaim DWC2
+    #             INNER JOIN DealarWarrantyClaimProduct D2
+    #                 ON DWC2.DCWarrantyId = D2.DCWarrantyId
+    #             LEFT JOIN Product P2
+    #                 ON D2.ProductCode = P2.ProductCode
+    #             LEFT JOIN OtherProduct OP2
+    #                 ON D2.ProductCode = CONVERT(VARCHAR, OP2.ProductCode)
+    #             INNER JOIN DealarInvoiceDetails DID
+    #                 ON DWC2.ChassisNo = DID.ChassisNo
+    #             INNER JOIN Product BP
+    #                 ON DID.ProductCode = BP.ProductCode
+    #             WHERE DWC2.Status = 1
+    #               AND DWC2.WCDate >= @from_date
+    #               AND DWC2.WCDate < DATEADD(day, 1, @to_date)
+    #         ),
+    #         TopParts AS (
+    #             SELECT TOP (@limit_parts)
+    #                 PartCode,
+    #                 PartName,
+    #                 COUNT(*) AS TotalCount
+    #             FROM Base
+    #             GROUP BY PartCode, PartName
+    #             ORDER BY COUNT(*) DESC
+    #         )
+    #         SELECT
+    #             b.PartCode,
+    #             b.PartName,
+    #             b.BikeModel,
+    #             COUNT(*) AS ClaimCount,
+    #             tp.TotalCount AS TotalCount
+    #         FROM Base b
+    #         INNER JOIN TopParts tp
+    #             ON b.PartCode = tp.PartCode
+    #            AND b.PartName = tp.PartName
+    #         GROUP BY b.PartCode, b.PartName, b.BikeModel, tp.TotalCount
+    #         ORDER BY tp.TotalCount DESC, b.PartCode ASC, ClaimCount DESC, b.BikeModel ASC;
+    #     """
 
-        max_retries = 3
-        retries = 0
-        cursor = None
+    #     max_retries = 3
+    #     retries = 0
+    #     cursor = None
 
-        while retries < max_retries:
-            try:
-                cursor = self.connection.cursor()
-                cursor.execute(sql, (limit, from_date, to_date))
-                rows = cursor.fetchall()
-                cursor.close()
-                cursor = None
+    #     while retries < max_retries:
+    #         try:
+    #             cursor = self.connection.cursor()
+    #             cursor.execute(sql, (limit, from_date, to_date))
+    #             rows = cursor.fetchall()
+    #             cursor.close()
+    #             cursor = None
 
-                out: List[dict] = []
-                for r in rows:
-                    out.append(
-                        {
-                            "partCode": None if r[0] is None else str(r[0]),
-                            "partName": None if r[1] is None else str(r[1]),
-                            "bikeModel": None if r[2] is None else str(r[2]),
-                            "claimCount": int(r[3]),
-                            "totalCount": int(r[4]),
-                        }
-                    )
-                return out
-            except Exception as e:
-                if cursor:
-                    cursor.close()
-                    cursor = None
-                print(
-                    f"******* {retries + 1}. Failed to fetch top warranty parts by bike model: {e.__class__.__name__} | {e}"
-                )
-                time.sleep(1)
-                self._reconnect_to_db()
-                retries += 1
+    #             out: List[dict] = []
+    #             for r in rows:
+    #                 out.append(
+    #                     {
+    #                         "partCode": None if r[0] is None else str(r[0]),
+    #                         "partName": None if r[1] is None else str(r[1]),
+    #                         "bikeModel": None if r[2] is None else str(r[2]),
+    #                         "claimCount": int(r[3]),
+    #                         "totalCount": int(r[4]),
+    #                     }
+    #                 )
+    #             return out
+    #         except Exception as e:
+    #             if cursor:
+    #                 cursor.close()
+    #                 cursor = None
+    #             print(
+    #                 f"******* {retries + 1}. Failed to fetch top warranty parts by bike model: {e.__class__.__name__} | {e}"
+    #             )
+    #             time.sleep(1)
+    #             self._reconnect_to_db()
+    #             retries += 1
 
-        raise DataRetrievalError("FAILED TO FETCH TOP WARRANTY PARTS BY BIKE MODEL EVEN AFTER RETRYING")
+    #     raise DataRetrievalError("FAILED TO FETCH TOP WARRANTY PARTS BY BIKE MODEL EVEN AFTER RETRYING")
 
     def get_top_warranty_parts_for_bike_model(
         self,
@@ -515,11 +515,11 @@ class DBManager:
         to_date: Optional[date] = None,
     ) -> List[dict]:
         """
-        Live query to SQL Server: returns top N parts (by claim count) for matching bike models.
+        Live query to SQL Server: returns top N parts per matching bike model.
 
         Args:
-          bike_model: Bike model prefix (matched with LIKE @bike_model + '%')
-          limit: top N parts (1..200)
+          bike_model: Bike model prefix (matched with LIKE @bike_model + '%'); empty selects all models
+          limit: top N parts per bike model (1..200)
           from_date: start date (inclusive)
           to_date: end date (inclusive). Defaults to today's date if not provided.
 
@@ -527,7 +527,7 @@ class DBManager:
           [{'bikeModel': '...', 'partCode': '...', 'partName': '...', 'claimCount': 123, 'partRank': 1}, ...]
         """
         bike_model_str = "" if bike_model is None else str(bike_model).strip()
-        if not bike_model_str:
+        if bike_model is None:
             raise ValueError("Missing required parameter: bike_model")
 
         try:
@@ -549,38 +549,52 @@ class DBManager:
             DECLARE @to_date DATE = ?;
             DECLARE @bike_model NVARCHAR(255) = ?;
 
-            WITH Agg AS (
-                SELECT
-                    BP.ProductName AS BikeModel,
-                    P2.ProductName AS PartName,
-                    COUNT(*) AS ClaimCount
-                FROM DealarWarrantyClaim DWC2
-                INNER JOIN DealarWarrantyClaimProduct D2
-                    ON DWC2.DCWarrantyId = D2.DCWarrantyId
-                LEFT JOIN Product P2
-                    ON D2.ProductCode = P2.ProductCode
+            WITH Claims AS (
+                SELECT DISTINCT
+                    DWC.DCWarrantyId,
+                    D.ProductCode,
+                    RTRIM(BP.ProductName) AS BikeModel
+                FROM DealarWarrantyClaim DWC
+                INNER JOIN DealarWarrantyClaimProduct D
+                    ON D.DCWarrantyId = DWC.DCWarrantyId
+                INNER JOIN ViewtblJobCardDetailSparepartWork SP
+                    ON SP.JobCardNo = DWC.JobCardNo AND SP.ItemCode = D.ProductCode
                 INNER JOIN DealarInvoiceDetails DID
-                    ON DWC2.ChassisNo = DID.ChassisNo
+                    ON DID.ChassisNo = DWC.ChassisNo
                 INNER JOIN Product BP
-                    ON DID.ProductCode = BP.ProductCode
-                WHERE DWC2.Status = 1
+                    ON BP.ProductCode = DID.ProductCode
+                WHERE DWC.Status = 1
+                  AND DWC.ChassisNo <> ''
                   AND BP.ProductName LIKE @bike_model + '%'
-                  AND DWC2.WCDate >= @from_date
-                  AND DWC2.WCDate < DATEADD(DAY, 1, @to_date)
-                GROUP BY
-                    BP.ProductName,
-                    P2.PartNo,
-                    P2.ProductName
+                  AND DWC.WCDate >= @from_date
+                  AND DWC.WCDate < DATEADD(DAY, 1, @to_date)
+                  AND ISNULL(D.UnitPrice, SP.WarrantyPrice) * D.Quantity > 0
+            ),
+            Agg AS (
+                SELECT
+                    C.BikeModel,
+                    RTRIM(ISNULL(P.ProductName, OP.ProductName)) AS PartName,
+                    MAX(ISNULL(P.PartNo, OP.SMSCode)) AS PartCode,
+                    COUNT(DISTINCT C.DCWarrantyId) AS ClaimCount
+                FROM Claims C
+                LEFT JOIN Product P
+                    ON P.ProductCode = C.ProductCode
+                LEFT JOIN OtherProduct OP
+                    ON C.ProductCode = CONVERT(VARCHAR(50), OP.ProductCode)
+                GROUP BY C.BikeModel, RTRIM(ISNULL(P.ProductName, OP.ProductName))
+            ),
+            Ranked AS (
+                SELECT *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY BikeModel
+                        ORDER BY ClaimCount DESC, PartName ASC
+                    ) AS PartRank
+                FROM Agg
             )
-            SELECT TOP (@limit)
-                BikeModel,
-                PartName,
-                ClaimCount,
-                ROW_NUMBER() OVER (
-                    ORDER BY ClaimCount DESC
-                ) AS PartRank
-            FROM Agg
-            ORDER BY ClaimCount DESC;
+            SELECT BikeModel, PartCode, PartName, ClaimCount, PartRank
+            FROM Ranked
+            WHERE PartRank <= @limit
+            ORDER BY BikeModel, PartRank;
         """
 
         max_retries = 3
@@ -601,10 +615,10 @@ class DBManager:
                     out.append(
                         {
                             "bikeModel": None if r[0] is None else str(r[0]),
-                            # "partCode": None if r[1] is None else str(r[1]),
-                            "partName": None if r[2] is None else str(r[1]),
-                            "claimCount": int(r[2]),
-                            "partRank": int(r[3]),
+                            "partCode": None if r[1] is None else str(r[1]),
+                            "partName": None if r[2] is None else str(r[2]),
+                            "claimCount": int(r[3]),
+                            "partRank": int(r[4]),
                         }
                     )
                 return out

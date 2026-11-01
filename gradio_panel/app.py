@@ -1225,7 +1225,7 @@ def fetch_parts_for_bike_model(limit, bike_model: str, from_date, to_date):
     """Fetch top warranty parts for a specific bike model from the API."""
     try:
         # Check if bike_model is provided (required)
-        if not bike_model:
+        if bike_model is None:
             fig = create_bar_chart(pd.DataFrame())
             return fig, "⚠️ Please select a bike model first"
 
@@ -1276,8 +1276,16 @@ def fetch_parts_for_bike_model(limit, bike_model: str, from_date, to_date):
             if code_col:
                 df = df.drop(columns=[code_col])
         
+        # Keep each model's counts separate when the prefix matches several models.
+        if not df.empty and "bikeModel" in df.columns and df["bikeModel"].nunique() > 1:
+            df["partName"] = (
+                df["bikeModel"].fillna("Unknown model").astype(str)
+                + " — "
+                + df["partName"].fillna("Unknown part").astype(str)
+            )
+
         # Create the chart with bike model in title
-        display_label = bike_model
+        display_label = bike_model or "All models"
         chart_title = f"Top Parts for {display_label}" if display_label else "Top Parts by Bike Model"
         fig = create_bar_chart(df, chart_title)
 
@@ -1890,18 +1898,18 @@ with gr.Blocks() as app:
                     )
 
                     limit_input_2 = gr.Number(
-                        label="📊 Limit (optional)",
+                        label="📊 Parts per bike model (optional)",
                         value=None,
                         step=1,
-                        info="Number of records to fetch (leave empty for default)"
+                        info="Top parts for each matching model (default 5, maximum 200)"
                     )
 
                     bike_model_choices = get_bike_model_choices()
                     bike_dropdown = gr.Dropdown(
-                        choices=bike_model_choices,
+                        choices=[("All models", "")] + [(model, model) for model in bike_model_choices],
                         value=bike_model_choices[0] if bike_model_choices else None,
                         label="🏍️ Select Bike Model",
-                        info="Type to filter bikes",
+                        info="Select a model prefix or All models",
                         interactive=True,
                         filterable=True,
                         elem_id="bike-model-dropdown"

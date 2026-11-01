@@ -191,7 +191,7 @@ def top_warranty_parts_by_bike_model_api(request):
 @extend_schema(
     operation_id="top_warranty_parts_for_bike_model",
     description=(
-        "Top warranty-claimed parts for a single bike model (bikeModel + partCode + partName + claimCount + rank), "
+        "Top warranty-claimed parts per matching bike model (bikeModel, partCode, partName, claimCount, partRank), "
         "queried live from SQL Server."
     ),
     parameters=[
@@ -199,13 +199,13 @@ def top_warranty_parts_by_bike_model_api(request):
             name="bike_model",
             type=OpenApiTypes.STR,
             required=True,
-            description="Bike model name (matches Product.ProductName from invoice details).",
+            description="Bike model prefix from invoice details; pass an empty string for all models.",
         ),
         OpenApiParameter(
             name="limit",
             type=OpenApiTypes.INT,
             required=False,
-            description="Top N parts to return (default 5, max 200).",
+            description="Top N parts per bike model (default 5, max 200).",
         ),
         OpenApiParameter(
             name="from_date",
@@ -225,7 +225,7 @@ def top_warranty_parts_by_bike_model_api(request):
 @api_view(["GET"])
 def top_warranty_parts_for_bike_model_api(request):
     bike_model = (request.query_params.get("bike_model") or "").strip()
-    if not bike_model:
+    if "bike_model" not in request.query_params:
         return Response(
             {"ret": False, "data": [], "error": "Missing required query param: bike_model"},
             status=400,
