@@ -191,7 +191,7 @@ def top_warranty_parts_by_bike_model_api(request):
 @extend_schema(
     operation_id="top_warranty_parts_for_bike_model",
     description=(
-        "Top warranty-claimed parts per matching bike model (bikeModel, partCode, partName, claimCount, partRank), "
+        "Top warranty-claimed parts per Motors mapped bike model (bikeModel, partCode, partName, claimCount, partRank), "
         "queried live from SQL Server."
     ),
     parameters=[
@@ -199,13 +199,13 @@ def top_warranty_parts_by_bike_model_api(request):
             name="bike_model",
             type=OpenApiTypes.STR,
             required=True,
-            description="Bike model prefix from invoice details; pass an empty string for all models.",
+            description="Model group from bike_model_groups.json; pass an empty string for all mapped groups.",
         ),
         OpenApiParameter(
             name="limit",
             type=OpenApiTypes.INT,
             required=False,
-            description="Top N parts per bike model (default 5, max 200).",
+            description="Top N parts after aggregating each mapped model group (default 5, max 200).",
         ),
         OpenApiParameter(
             name="from_date",

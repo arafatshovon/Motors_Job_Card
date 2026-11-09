@@ -23,6 +23,7 @@ RUN pip install --no-cache-dir --no-compile -r requirements.txt
 
 # Copy the gradio app
 COPY gradio_panel/app.py .
+COPY app/config/bike_model_groups.json ./config/bike_model_groups.json
 
 # Expose port
 EXPOSE 9002

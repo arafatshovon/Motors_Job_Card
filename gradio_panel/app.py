@@ -87,135 +87,7 @@ def resolve_enhanced_data_path() -> str:
 
 ENHANCED_DATA_PATH = resolve_enhanced_data_path()
 
-# Fallback config: used if the JSON file isn't present inside the container.
-# This is copied from app/config/bike_model_groups.json so the dropdown can still render keys.
-BIKE_MODEL_GROUPS_FALLBACK = {
-    "Aerox155": [
-        "Aerox155 Grey Vermillion PGD",
-        "Aerox155 Metallic Black SMX",
-        "Aerox155 Racing Blue DPBMY",
-        "Aerox155 Silver WMC",
-    ],
-    "Alpha": ["Alpha Marble Black"],
-    "FAZER FI V 2.0": [
-        "FAZER FI V 2.0 Marble White 2WS300BWC1",
-        "FAZER FI V 2.0 Ravine Black 2WS200SMX",
-    ],
-    "FZ V3": ["FZ V3 Metric Black SMX", "FZ V3 Racing Blue DPBMY"],
-    "FZ-X": [
-        "FZ-X (BYJ1) Dark Matt Blue MFG",
-        "FZ-X (BYJ1) Matt Black MFG",
-        "FZ-X (BYJ1) Matt Copper MFG",
-        "FZ-X (BYJ1) Matt Titan MFG",
-        "FZ-X (Matt Copper)",
-        "FZ-X (Metallic Blue)",
-        "FZ-X Matt Black MBL2",
-        "FZ-X Matt Copper MDOM3",
-        "FZ-X Metallic Blue BMC",
-    ],
-    "FZ25": ["FZ25 (250CC)"],
-    "FZN 250": ["FZN 250 (DF81) Black", "FZN 250 (DF81) Racing Blue", "FZN 250 (DF81) White"],
-    "FZS DD": [
-        "FZS DD Armada Blue CKD",
-        "FZS DD Armada Blue MFG",
-        "FZS DD Black Metallic MFG",
-        "FZS DD Dark knight MFG",
-        "FZS DD Dark Night CKD",
-        "FZS DD Grey Metallic MFG",
-        "FZS DD Matt Green CKD",
-        "FZS DD Matt Grey Metallic MFG",
-    ],
-    "FZS FI V 2.0": [
-        "FZS FI V 2.0 (SE) Matt Green 2GS300MBL2",
-        "FZS FI V 2.0 (SE) Matt Green 2GS700MBL2",
-        "FZS FI V 2.0 Hurricane Grey 2GS600MNM3",
-        "FZS FI V 2.0 Knight Red 2GS600MDRM4",
-        "FZS FI V 2.0 Lighting Cyan 2GS600CM6",
-        "FZS FI V 2.0 Opal White 2GS600BWC1",
-        "FZS FI V 2.0 Viper Black 2GS400SMX",
-    ],
-    "FZS V-2.0 DD": ["FZS V-2.0 DD Armada Blue MDPBM1"],
-    "FZS V2": ["Fzs DD V2.0 Dark Knight", "Fzs DD V2.0 Matt Green", "FZS v2-Dark Night 2GS900010A MBL2"],
-    "FZS V3": [
-        "FZS V3 (BDY5) Dark Matt Blue",
-        "FZS V3 (BDY5) Matt Red",
-        "FZS V3 (BDY6) Majesty Red",
-        "FZS V3 (BDY6) Metallic Black",
-        "FZS V3 (BDY6) Metallic Grey",
-        "FZS V3 Dark Matt Blue MDPBM1",
-        "FZS V3 Gray & Cyan Blue MNM3",
-        "FZS V3 Matt Black MBL2",
-    ],
-    "FZS V3.0": [
-        "FZS V3.0 Dark Matt Blue CKD",
-        "FZS V3.0 Dark Matt Blue MFG",
-        "FZS V3.0 Dark Matt Blue MFG (MDPBM1)",
-        "FZS V3.0 Grey & Cyan Blue CKD",
-        "FZS V3.0 Matt Black CKD",
-        "FZS V3.0 Matt Black MFG",
-        "FZS V3.0 Matt Black MFG (MBL2)",
-        "FZS V3.0 Matt Red MFG",
-        "FZS V3.0 Metallic Red CKD",
-        "FZS V3.0 Metallic Red MFG",
-        "FZS V3.0 Vintage Green MFG",
-        "FZS V3.0 White CKD",
-    ],
-    "FZS V4": [
-        "FZS V4 (DE91) Dark Matt Blue",
-        "FZS V4 (DE91) Matt Black",
-        "FZS V4 (DE92) Ice Fluo Vermillion",
-        "FZS V4 (DE92) Majesty Red",
-        "FZS V4 (DE92) Matt Black",
-        "FZS V4 (DE92) Metallic Grey",
-        "FZS V4 (DE92) Racing Blue",
-        "FZS V4 (DE92) Sparkle Green",
-    ],
-    "Fascino": ["Fascino Unite White"],
-    "Fazer": ["Fazer Burning Red VRC1", "Fazer Midnight Black SMX"],
-    "Fazer FZH150": ["Fazer FZH150 (DH21) Black", "Fazer FZH150 (DH21) Blue", "Fazer FZH150 (DH21) Red"],
-    "MT 15": ["MT 15 ABS India Black SMX", "MT 15 ABS India Blue MDPBM1"],
-    "MT15 V2": [
-        "MT15 V2 Cyan Storm PGD",
-        "MT15 V2 Ice Fluo Vermillion MLNM4",
-        "MT15 V2 Metallic Black SMX",
-        "MT15 V2 Racing Blue DPBMY",
-    ],
-    "N Max": ["N Max Scooter Grey MNM3"],
-    "Other": ["FUEL PUMP COMP."],
-    "R15 V3": ["R15 V3 Dark Knight MBL2", "R15 V3 MotoGP SMX", "R15 V3 Racing Blue DPBMY", "R15 V3 Thunder Grey MNM3"],
-    "R15 V3.0": ["R15 V3.0 Black SMX", "R15 V3.0 Blue DPBMC", "R15 V3.0 Movistar DPBMC", "R15 V3.0 Yellow YM6"],
-    "R15 V4": ["R15 V4 (BPDF00) Intensity White", "R15 V4 Dark Knight LGB", "R15 V4 Metallic Red VRC1", "R15 V4 Racing Blue DPBMY"],
-    "R15M": ["R15M (BPDD00) Metallic Grey", "R15M (Metallic Grey BPDD00)", "R15M (Metallic Grey)", "R15M Metallic Grey WMC"],
-    "Ray ZR": [
-        "Ray ZR SR 125 FI Blue DPBMY",
-        "Ray ZR SR 125 FI Green NHG",
-        "Ray ZR SR Blue DPBMY",
-        "Ray ZR Street Rally (Red) B2V1000-010A M",
-    ],
-    "RayZR Street Rally": ["RayZR Street Rally-DPBMY(Blue)", "RayZR Street Rally-MNM3(Red/Gray)"],
-    "SALUTO Disc": [
-        "SALUTO (Disc) Glory Green 2LP800YB",
-        "SALUTO (Disc) Matt Green 2LPB00MBL2",
-        "SALUTO (Disc) Smoky Black 2LP800MNM3",
-        "SALUTO (Disc) Sparky Cyan 2LP800CM6",
-        "Saluto Disc AB MFG",
-        "Saluto Disc MG CKD",
-        "Saluto Disc MG MFG",
-        "Saluto Disc SC CKD",
-        "Saluto Disc SC MFG",
-    ],
-    "SALUTO Drum": ["SALUTO (Drum) Victory Red 2LP400DRMK", "SALUTO (Drum) Victory Red 2LP500DRMK"],
-    "SZRR": ["SZRR (SE) Matt Green 2PY500MBL2", "SZRR Beast Black 2PY400SMX", "SZRR Predator Cyan 2PY400CM6"],
-    "Saluto": [
-        "Saluto UBS Armada Blue MFG",
-        "Saluto UBS Dark Purplish Blue MFG",
-        "Saluto UBS Matt Black MFG",
-        "Saluto UBS Pastel Dark Grey MFG",
-        "Saluto UBS Sparkle Green MFG",
-    ],
-    "XSR155": ["XSR155 (Matt Black)", "XSR155 (Matt Green Metallic)", "XSR155 (Radical White)", "XSR155 (White Metallic)"],
-}
-
+# Both the API and this panel use the Motors mapping packaged in config.
 BIKE_MODEL_GROUPS = {}
 BIKE_MODEL_GROUP_LOOKUP = {}
 BIKE_MODEL_GROUP_KEYS = []
@@ -233,95 +105,43 @@ def normalize_bike_name(value: object) -> str:
 
 
 def load_bike_model_key_choices():
-    """Load dropdown bike model keys from the JSON config (top-level keys)."""
+    """Show only the specified model names from the Motors mapping."""
     global BIKE_MODEL_KEY_CHOICES
-    try:
-        with open(BIKE_MODEL_GROUPS_PATH, "r", encoding="utf-8") as handle:
-            data = json.load(handle)
-        if not isinstance(data, dict):
-            print(f"⚠️ bike_model_groups.json is not a JSON object: {BIKE_MODEL_GROUPS_PATH}")
-            data = BIKE_MODEL_GROUPS_FALLBACK
-
-        keys = [str(k).strip() for k in data.keys()]
-        keys = [k for k in keys if k]
-        keys = sorted(keys, key=lambda s: s.lower())
-        BIKE_MODEL_KEY_CHOICES = keys
-
-        # Debug print so you can verify keys are present in runtime logs
-        preview = ", ".join(keys[:25])
-        more = "" if len(keys) <= 25 else f" ... (+{len(keys) - 25} more)"
-        print(f"✅ Loaded {len(keys)} bike model keys from {BIKE_MODEL_GROUPS_PATH}: {preview}{more}")
-        return BIKE_MODEL_KEY_CHOICES
-    except FileNotFoundError:
-        # Docker/mount issue: fallback so UI still works.
-        keys = sorted(BIKE_MODEL_GROUPS_FALLBACK.keys(), key=lambda s: str(s).lower())
-        BIKE_MODEL_KEY_CHOICES = keys
-        preview = ", ".join(keys[:25])
-        more = "" if len(keys) <= 25 else f" ... (+{len(keys) - 25} more)"
-        print(
-            f"⚠️ Bike model groups file not found: {BIKE_MODEL_GROUPS_PATH}. "
-            f"Using fallback keys ({len(keys)}): {preview}{more}"
-        )
-        return BIKE_MODEL_KEY_CHOICES
-    except Exception as e:
-        print(f"⚠️ Failed to load bike model keys: {e} (path: {BIKE_MODEL_GROUPS_PATH})")
-
-    BIKE_MODEL_KEY_CHOICES = []
+    BIKE_MODEL_KEY_CHOICES = list(BIKE_MODEL_GROUPS)
     return BIKE_MODEL_KEY_CHOICES
 
 
 def load_bike_model_groups():
-    """Load bike model groups and build a reverse lookup."""
+    """Load Motors' exact mappings; never infer a group from a model prefix."""
     global BIKE_MODEL_GROUPS, BIKE_MODEL_GROUP_LOOKUP, BIKE_MODEL_GROUP_KEYS
-    groups = {}
-    lookup = {}
     try:
         with open(BIKE_MODEL_GROUPS_PATH, "r", encoding="utf-8") as handle:
             data = json.load(handle)
-        if not isinstance(data, dict):
-            data = BIKE_MODEL_GROUPS_FALLBACK
-
+        if not isinstance(data, dict) or not data:
+            raise ValueError("Bike model mapping must contain model groups")
+        groups = {}
+        lookup = {}
         for group_key, model_list in data.items():
             key = normalize_bike_name(group_key)
-            if not key:
-                continue
+            if not key or not isinstance(model_list, list) or not model_list:
+                raise ValueError(f"Invalid bike model group: {group_key}")
+            models = [normalize_bike_name(model) for model in model_list]
+            groups[key] = models
             lookup[key] = key
-            lookup[normalize_bike_name(key)] = key
-            cleaned_models = []
-            if isinstance(model_list, list):
-                for model_name in model_list:
-                    model = normalize_bike_name(model_name)
-                    if not model:
-                        continue
-                    cleaned_models.append(model)
-                    lookup[model] = key
-                    lookup[normalize_bike_name(model)] = key
-            groups[key] = cleaned_models
-    except FileNotFoundError:
-        print(f"⚠️ Bike model groups file not found: {BIKE_MODEL_GROUPS_PATH} (using fallback groups)")
-        data = BIKE_MODEL_GROUPS_FALLBACK
-        for group_key, model_list in data.items():
-            key = normalize_bike_name(group_key)
-            if not key:
-                continue
-            lookup[key] = key
-            lookup[normalize_bike_name(key)] = key
-            cleaned_models = []
-            if isinstance(model_list, list):
-                for model_name in model_list:
-                    model = normalize_bike_name(model_name)
-                    if not model:
-                        continue
-                    cleaned_models.append(model)
-                    lookup[model] = key
-                    lookup[normalize_bike_name(model)] = key
-            groups[key] = cleaned_models
-    except Exception as e:
-        print(f"⚠️ Failed to load bike model groups: {e}")
-
-    BIKE_MODEL_GROUPS = groups
-    BIKE_MODEL_GROUP_LOOKUP = lookup
-    BIKE_MODEL_GROUP_KEYS = sorted(BIKE_MODEL_GROUPS.keys(), key=lambda s: str(s).lower())
+            for model in models:
+                if not model:
+                    raise ValueError(f"Empty model in group: {key}")
+                if model in lookup and lookup[model] != key:
+                    raise ValueError(f"Conflicting bike model mapping: {model}")
+                lookup[model] = key
+        BIKE_MODEL_GROUPS = groups
+        BIKE_MODEL_GROUP_LOOKUP = lookup
+        BIKE_MODEL_GROUP_KEYS = list(groups)
+    except (OSError, ValueError) as e:
+        print(f"⚠️ Unable to load Motors bike model mapping: {e}")
+        BIKE_MODEL_GROUPS = {}
+        BIKE_MODEL_GROUP_LOOKUP = {}
+        BIKE_MODEL_GROUP_KEYS = []
     return BIKE_MODEL_GROUPS
 
 
@@ -1225,9 +1045,9 @@ def fetch_parts_for_bike_model(limit, bike_model: str, from_date, to_date):
     """Fetch top warranty parts for a specific bike model from the API."""
     try:
         # Check if bike_model is provided (required)
-        if bike_model is None:
+        if bike_model not in get_bike_model_choices():
             fig = create_bar_chart(pd.DataFrame())
-            return fig, "⚠️ Please select a bike model first"
+            return fig, "⚠️ Please select a mapped bike model first"
 
         # Convert dates to string format YYYY-MM-DD
         from_date_str = convert_date_to_string(from_date)
@@ -1276,7 +1096,7 @@ def fetch_parts_for_bike_model(limit, bike_model: str, from_date, to_date):
             if code_col:
                 df = df.drop(columns=[code_col])
         
-        # Keep each model's counts separate when the prefix matches several models.
+        # Keep each mapped group's counts separate if the response contains several groups.
         if not df.empty and "bikeModel" in df.columns and df["bikeModel"].nunique() > 1:
             df["partName"] = (
                 df["bikeModel"].fillna("Unknown model").astype(str)
@@ -1285,8 +1105,8 @@ def fetch_parts_for_bike_model(limit, bike_model: str, from_date, to_date):
             )
 
         # Create the chart with bike model in title
-        display_label = bike_model or "All models"
-        chart_title = f"Top Parts for {display_label}" if display_label else "Top Parts by Bike Model"
+        display_label = bike_model
+        chart_title = f"Top Parts for {display_label}"
         fig = create_bar_chart(df, chart_title)
 
         status = f"✅ Parts for {display_label}"
@@ -1901,15 +1721,15 @@ with gr.Blocks() as app:
                         label="📊 Parts per bike model (optional)",
                         value=None,
                         step=1,
-                        info="Top parts for each matching model (default 5, maximum 200)"
+                        info="Top parts after combining the mapped variants (default 5, maximum 200)"
                     )
 
                     bike_model_choices = get_bike_model_choices()
                     bike_dropdown = gr.Dropdown(
-                        choices=[("All models", "")] + [(model, model) for model in bike_model_choices],
+                        choices=bike_model_choices,
                         value=bike_model_choices[0] if bike_model_choices else None,
                         label="🏍️ Select Bike Model",
-                        info="Select a model prefix or All models",
+                        info="Motors mapped model names",
                         interactive=True,
                         filterable=True,
                         elem_id="bike-model-dropdown"

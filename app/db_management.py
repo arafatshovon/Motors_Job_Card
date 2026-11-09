@@ -8,6 +8,7 @@ from threading import Thread
 import time
 import pytz #type:ignore
 from traceback import format_exc
+from app.bike_model_mapping import load_bike_model_mapping
 
 class DataRetrievalError(Exception):
     pass
@@ -515,10 +516,10 @@ class DBManager:
         to_date: Optional[date] = None,
     ) -> List[dict]:
         """
-        Live query to SQL Server: returns top N parts per matching bike model.
+        Live query to SQL Server: returns top N parts per Motors mapped model.
 
         Args:
-          bike_model: Bike model prefix (matched with LIKE @bike_model + '%'); empty selects all models
+          bike_model: Motors mapped model name; empty selects all mapped groups
           limit: top N parts per bike model (1..200)
           from_date: start date (inclusive)
           to_date: end date (inclusive). Defaults to today's date if not provided.
@@ -529,6 +530,20 @@ class DBManager:
         bike_model_str = "" if bike_model is None else str(bike_model).strip()
         if bike_model is None:
             raise ValueError("Missing required parameter: bike_model")
+
+        groups = load_bike_model_mapping()
+        if bike_model_str and bike_model_str not in groups:
+            raise ValueError(f"Unknown mapped bike model: {bike_model_str}")
+        selected_groups = {bike_model_str: groups[bike_model_str]} if bike_model_str else groups
+        model_pairs = [
+            (model, group)
+            for group, models in selected_groups.items()
+            for model in models
+        ]
+        mapping_values = ", ".join(
+            "(CAST(? AS NVARCHAR(255)), CAST(? AS NVARCHAR(255)))"
+            for _ in model_pairs
+        )
 
         try:
             limit = int(limit)
@@ -543,17 +558,20 @@ class DBManager:
         if to_date < from_date:
             raise ValueError("Invalid date range: to_date must be >= from_date")
 
-        sql = """
+        sql = f"""
             DECLARE @limit INT = ?;
             DECLARE @from_date DATE = ?;
             DECLARE @to_date DATE = ?;
-            DECLARE @bike_model NVARCHAR(255) = ?;
 
-            WITH Claims AS (
+            WITH ModelMapping AS (
+                SELECT RawModel, MappedModel
+                FROM (VALUES {mapping_values}) AS M(RawModel, MappedModel)
+            ),
+            Claims AS (
                 SELECT DISTINCT
                     DWC.DCWarrantyId,
                     D.ProductCode,
-                    RTRIM(BP.ProductName) AS BikeModel
+                    MM.MappedModel AS BikeModel
                 FROM DealarWarrantyClaim DWC
                 INNER JOIN DealarWarrantyClaimProduct D
                     ON D.DCWarrantyId = DWC.DCWarrantyId
@@ -563,9 +581,10 @@ class DBManager:
                     ON DID.ChassisNo = DWC.ChassisNo
                 INNER JOIN Product BP
                     ON BP.ProductCode = DID.ProductCode
+                INNER JOIN ModelMapping MM
+                    ON LTRIM(RTRIM(BP.ProductName)) = MM.RawModel
                 WHERE DWC.Status = 1
                   AND DWC.ChassisNo <> ''
-                  AND BP.ProductName LIKE @bike_model + '%'
                   AND DWC.WCDate >= @from_date
                   AND DWC.WCDate < DATEADD(DAY, 1, @to_date)
                   AND ISNULL(D.UnitPrice, SP.WarrantyPrice) * D.Quantity > 0
@@ -604,8 +623,8 @@ class DBManager:
         while retries < max_retries:
             try:
                 cursor = self.connection.cursor()
-                # SQL applies prefix wildcard via: LIKE @bike_model + '%'
-                cursor.execute(sql, (limit, from_date, to_date, bike_model_str))
+                mapping_params = tuple(value for pair in model_pairs for value in pair)
+                cursor.execute(sql, (limit, from_date, to_date, *mapping_params))
                 rows = cursor.fetchall()
                 cursor.close()
                 cursor = None
