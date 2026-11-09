@@ -1578,7 +1578,7 @@ with gr.Blocks() as app:
     
     gr.HTML("""
         <div class="main-header">
-            <h1>🔧 Motors Job Card</h1>
+            <h1>🔧 YAMAHA Warranty AI Dashboard</h1>
             <p>Analyze top warranty parts data from the API</p>
         </div>
     """)
