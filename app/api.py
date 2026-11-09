@@ -261,8 +261,10 @@ def top_warranty_parts_for_bike_model_api(request):
 @extend_schema(
     operation_id="warranty_failure_ratio_by_bike_model",
     description=(
-        "Bike model failure ratio based on parts claimed vs bikes sold, queried live from SQL Server. "
-        "Returns (bikeCode, bikeName, totalBikeSold, totalPartsClaimed, partsFailureRatio)."
+        "All-time failure ratio per Motors mapped bike model: unique qualifying failed chassis "
+        "divided by unique invoiced chassis (Product.Business = 'C'). Warranty eligibility "
+        "matches the top-parts query without its date/rank limits. "
+        "Returns (bikeCode=null, bikeName, totalBikeSold, totalFailedChassis, partsFailureRatio)."
     ),
     parameters=[
         OpenApiParameter(

@@ -178,57 +178,6 @@ def get_bike_model_choices():
     return BIKE_MODEL_KEY_CHOICES or []
 
 
-def aggregate_failure_ratio_by_group(df: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate failure ratio data by bike model group."""
-    if df is None or df.empty or not BIKE_MODEL_GROUP_LOOKUP:
-        return df
-
-    work_df = df.copy()
-    # API may return either totalFailedChassis (new) or totalPartsClaimed (old)
-    for col in ["bikeName", "bikeCode", "totalBikeSold", "totalFailedChassis", "totalPartsClaimed", "partsFailureRatio"]:
-        if col not in work_df.columns:
-            alt = next((c for c in work_df.columns if c.lower() == col.lower()), None)
-            if alt:
-                work_df[col] = work_df[alt]
-
-    if "bikeName" not in work_df.columns:
-        return df
-
-    # Normalize names so minor whitespace differences don't break grouping
-    work_df["bikeName"] = work_df["bikeName"].astype(str)
-    work_df["__bikeNameNorm"] = work_df["bikeName"].map(normalize_bike_name)
-    work_df["__group_key"] = work_df["__bikeNameNorm"].map(
-        lambda name: BIKE_MODEL_GROUP_LOOKUP.get(name, name)
-    )
-
-    work_df["totalBikeSold"] = pd.to_numeric(work_df.get("totalBikeSold", 0), errors="coerce").fillna(0)
-    # Prefer new numerator if present; otherwise fall back to old field.
-    if "totalFailedChassis" in work_df.columns:
-        work_df["totalFailedChassis"] = pd.to_numeric(work_df.get("totalFailedChassis", 0), errors="coerce").fillna(0)
-    else:
-        work_df["totalFailedChassis"] = pd.to_numeric(work_df.get("totalPartsClaimed", 0), errors="coerce").fillna(0)
-
-    def _join_unique(values):
-        cleaned = [str(v).strip() for v in values if str(v).strip()]
-        return ", ".join(dict.fromkeys(cleaned))
-
-    aggregated = (
-        work_df.groupby("__group_key", as_index=False)
-        .agg(
-            bikeCode=("bikeCode", _join_unique),
-            totalBikeSold=("totalBikeSold", "sum"),
-            totalFailedChassis=("totalFailedChassis", "sum"),
-        )
-    )
-    aggregated["partsFailureRatio"] = aggregated.apply(
-        lambda row: (row["totalFailedChassis"] / row["totalBikeSold"]) if row["totalBikeSold"] else 0.0,
-        axis=1,
-    )
-    aggregated["bikeName"] = aggregated["__group_key"]
-    aggregated = aggregated.drop(columns=["__group_key"])
-    return aggregated
-
-
 # Load bike model group config
 load_bike_model_groups()
 load_bike_model_key_choices()
@@ -1244,7 +1193,6 @@ def create_failure_ratio_chart(df: pd.DataFrame, title: str = "Bike Model Failur
             customdata=customdata,
             hovertemplate=(
                 "<b>%{y}</b><br>"
-                "Bike Code: %{customdata[0]}<br>"
                 "Failure Ratio: %{x:.4f}<br>"
                 "Total Bike Sold: %{customdata[1]}<br>"
                 "Total Failed Chassis: %{customdata[2]}<extra></extra>"
@@ -1305,12 +1253,14 @@ def fetch_failure_ratio():
             fig = create_failure_ratio_chart(pd.DataFrame())
             return fig, "No data found."
 
-        aggregated_df = aggregate_failure_ratio_by_group(df)
+        # The API counts unique chassis across the entire mapped group.
+        # Adding per-variant counts here would count the same bike more than once.
+        df = df[df["bikeName"].isin(get_bike_model_choices())].copy()
         fig = create_failure_ratio_chart(
-            aggregated_df,
+            df,
             "Bike Model Failure Ratio (Unique Failed Chassis / Bikes Sold)",
         )
-        return fig, f""
+        return fig, "All-time totals: unique qualifying failed chassis / unique invoiced bikes."
 
     except requests.exceptions.ConnectionError:
         fig = create_failure_ratio_chart(pd.DataFrame())
@@ -1770,6 +1720,10 @@ with gr.Blocks() as app:
 
         # Tab 3: Failure Ratio by Bike Model
         with gr.TabItem("📉 Failure Ratio"):
+            gr.Markdown(
+                "All-time failure ratio for Motors mapped models: **unique bikes with a qualifying "
+                "warranty claim ÷ unique invoiced bikes**. Each chassis is counted once per group."
+            )
             with gr.Row():
                 with gr.Column(scale=1):
                     gr.Markdown("### ⚙️ Query Parameters")

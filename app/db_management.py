@@ -9,6 +9,7 @@ import time
 import pytz #type:ignore
 from traceback import format_exc
 from app.bike_model_mapping import load_bike_model_mapping
+from app.warranty_queries import mapped_claims_ctes, bike_model_failure_ratio_sql
 
 class DataRetrievalError(Exception):
     pass
@@ -397,116 +398,6 @@ class DBManager:
 
         raise DataRetrievalError("FAILED TO FETCH TOP WARRANTY PARTS EVEN AFTER RETRYING")
 
-    # def get_top_warranty_parts_by_bike_model(
-    #     self,
-    #     limit: int = 30,
-    #     from_date: Optional[date] = None,
-    #     to_date: Optional[date] = None,
-    # ) -> List[dict]:
-    #     """
-    #     Live query to SQL Server: returns top N parts overall, broken down by bike model.
-
-    #     Output (flat rows):
-    #       [{'partCode': '...', 'partName': '...', 'bikeModel': '...', 'claimCount': 123}, ...]
-    #     """
-    #     try:
-    #         limit = int(limit)
-    #     except Exception:
-    #         limit = 30
-    #     limit = max(1, min(limit, 200))
-
-    #     if from_date is None:
-    #         raise ValueError("Missing required parameter: from_date")
-    #     if to_date is None:
-    #         to_date = date.today()
-    #     if to_date < from_date:
-    #         raise ValueError("Invalid date range: to_date must be >= from_date")
-
-    #     # Note: bike model is derived from the bike product sold for the chassis (invoice details -> Product BP).
-    #     sql = """
-    #         DECLARE @limit_parts INT = ?;
-    #         DECLARE @from_date DATE = ?;
-    #         DECLARE @to_date DATE = ?;
-
-    #         WITH Base AS (
-    #             SELECT
-    #                 ISNULL(P2.PartNo, OP2.SMSCode) AS PartCode,
-    #                 ISNULL(P2.ProductName, OP2.ProductName) AS PartName,
-    #                 BP.ProductName AS BikeModel
-    #             FROM DealarWarrantyClaim DWC2
-    #             INNER JOIN DealarWarrantyClaimProduct D2
-    #                 ON DWC2.DCWarrantyId = D2.DCWarrantyId
-    #             LEFT JOIN Product P2
-    #                 ON D2.ProductCode = P2.ProductCode
-    #             LEFT JOIN OtherProduct OP2
-    #                 ON D2.ProductCode = CONVERT(VARCHAR, OP2.ProductCode)
-    #             INNER JOIN DealarInvoiceDetails DID
-    #                 ON DWC2.ChassisNo = DID.ChassisNo
-    #             INNER JOIN Product BP
-    #                 ON DID.ProductCode = BP.ProductCode
-    #             WHERE DWC2.Status = 1
-    #               AND DWC2.WCDate >= @from_date
-    #               AND DWC2.WCDate < DATEADD(day, 1, @to_date)
-    #         ),
-    #         TopParts AS (
-    #             SELECT TOP (@limit_parts)
-    #                 PartCode,
-    #                 PartName,
-    #                 COUNT(*) AS TotalCount
-    #             FROM Base
-    #             GROUP BY PartCode, PartName
-    #             ORDER BY COUNT(*) DESC
-    #         )
-    #         SELECT
-    #             b.PartCode,
-    #             b.PartName,
-    #             b.BikeModel,
-    #             COUNT(*) AS ClaimCount,
-    #             tp.TotalCount AS TotalCount
-    #         FROM Base b
-    #         INNER JOIN TopParts tp
-    #             ON b.PartCode = tp.PartCode
-    #            AND b.PartName = tp.PartName
-    #         GROUP BY b.PartCode, b.PartName, b.BikeModel, tp.TotalCount
-    #         ORDER BY tp.TotalCount DESC, b.PartCode ASC, ClaimCount DESC, b.BikeModel ASC;
-    #     """
-
-    #     max_retries = 3
-    #     retries = 0
-    #     cursor = None
-
-    #     while retries < max_retries:
-    #         try:
-    #             cursor = self.connection.cursor()
-    #             cursor.execute(sql, (limit, from_date, to_date))
-    #             rows = cursor.fetchall()
-    #             cursor.close()
-    #             cursor = None
-
-    #             out: List[dict] = []
-    #             for r in rows:
-    #                 out.append(
-    #                     {
-    #                         "partCode": None if r[0] is None else str(r[0]),
-    #                         "partName": None if r[1] is None else str(r[1]),
-    #                         "bikeModel": None if r[2] is None else str(r[2]),
-    #                         "claimCount": int(r[3]),
-    #                         "totalCount": int(r[4]),
-    #                     }
-    #                 )
-    #             return out
-    #         except Exception as e:
-    #             if cursor:
-    #                 cursor.close()
-    #                 cursor = None
-    #             print(
-    #                 f"******* {retries + 1}. Failed to fetch top warranty parts by bike model: {e.__class__.__name__} | {e}"
-    #             )
-    #             time.sleep(1)
-    #             self._reconnect_to_db()
-    #             retries += 1
-
-    #     raise DataRetrievalError("FAILED TO FETCH TOP WARRANTY PARTS BY BIKE MODEL EVEN AFTER RETRYING")
 
     def get_top_warranty_parts_for_bike_model(
         self,
@@ -535,15 +426,7 @@ class DBManager:
         if bike_model_str and bike_model_str not in groups:
             raise ValueError(f"Unknown mapped bike model: {bike_model_str}")
         selected_groups = {bike_model_str: groups[bike_model_str]} if bike_model_str else groups
-        model_pairs = [
-            (model, group)
-            for group, models in selected_groups.items()
-            for model in models
-        ]
-        mapping_values = ", ".join(
-            "(CAST(? AS NVARCHAR(255)), CAST(? AS NVARCHAR(255)))"
-            for _ in model_pairs
-        )
+        claims_sql, mapping_params = mapped_claims_ctes(selected_groups, include_date_filter=True)
 
         try:
             limit = int(limit)
@@ -563,32 +446,7 @@ class DBManager:
             DECLARE @from_date DATE = ?;
             DECLARE @to_date DATE = ?;
 
-            WITH ModelMapping AS (
-                SELECT RawModel, MappedModel
-                FROM (VALUES {mapping_values}) AS M(RawModel, MappedModel)
-            ),
-            Claims AS (
-                SELECT DISTINCT
-                    DWC.DCWarrantyId,
-                    D.ProductCode,
-                    MM.MappedModel AS BikeModel
-                FROM DealarWarrantyClaim DWC
-                INNER JOIN DealarWarrantyClaimProduct D
-                    ON D.DCWarrantyId = DWC.DCWarrantyId
-                INNER JOIN ViewtblJobCardDetailSparepartWork SP
-                    ON SP.JobCardNo = DWC.JobCardNo AND SP.ItemCode = D.ProductCode
-                INNER JOIN DealarInvoiceDetails DID
-                    ON DID.ChassisNo = DWC.ChassisNo
-                INNER JOIN Product BP
-                    ON BP.ProductCode = DID.ProductCode
-                INNER JOIN ModelMapping MM
-                    ON LTRIM(RTRIM(BP.ProductName)) = MM.RawModel
-                WHERE DWC.Status = 1
-                  AND DWC.ChassisNo <> ''
-                  AND DWC.WCDate >= @from_date
-                  AND DWC.WCDate < DATEADD(DAY, 1, @to_date)
-                  AND ISNULL(D.UnitPrice, SP.WarrantyPrice) * D.Quantity > 0
-            ),
+            WITH {claims_sql},
             Agg AS (
                 SELECT
                     C.BikeModel,
@@ -623,7 +481,6 @@ class DBManager:
         while retries < max_retries:
             try:
                 cursor = self.connection.cursor()
-                mapping_params = tuple(value for pair in model_pairs for value in pair)
                 cursor.execute(sql, (limit, from_date, to_date, *mapping_params))
                 rows = cursor.fetchall()
                 cursor.close()
@@ -656,17 +513,24 @@ class DBManager:
 
     def get_bike_model_failure_ratios(self, limit: int = 100) -> List[dict]:
         """
-        Live query to SQL Server: parts failure ratio by bike model.
+        Live query to SQL Server: all-time chassis failure ratio by Motors mapped model.
 
         Failure ratio definition (updated):
           TotalFailedChassis / TotalBikeSold
 
         Where:
-          TotalFailedChassis = count of DISTINCT chassis numbers that had at least one claimed part.
+          TotalFailedChassis = DISTINCT chassis across qualifying claims from the same
+          eligibility CTE as get_top_warranty_parts_for_bike_model, without dates
+          or a top-parts limit. Count each bike once across all parts and variants.
+          TotalBikeSold = DISTINCT nonblank chassis across the whole mapped group
+          in DealarInvoiceDetails joined to DealarInvoiceMaster and Product,
+          retaining the existing Product.Business = 'C' sales classification.
+          Both counts use all history; invoice status/returns are not filtered.
+          A mapped group has multiple product codes, so bikeCode is None.
 
         Output:
           [{
-            'bikeCode': '...',
+            'bikeCode': None,
             'bikeName': '...',
             'totalBikeSold': 123,
             'totalFailedChassis': 45,
@@ -679,59 +543,7 @@ class DBManager:
             limit_int = 100
         limit_int = max(1, min(limit_int, 500))
 
-        sql = """
-            DECLARE @limit INT = ?;
-
-            ;WITH BikeSold AS (
-                SELECT
-                    BP.ProductCode AS BikeCode,
-                    BP.ProductName AS BikeName,
-                    COUNT(DISTINCT DID.ChassisNo) AS TotalBikeSold
-                FROM DealarInvoiceMaster DIM
-                INNER JOIN DealarInvoiceDetails DID
-                    ON DIM.InvoiceID = DID.InvoiceID
-                INNER JOIN Product BP
-                    ON DID.ProductCode = BP.ProductCode
-                WHERE BP.Business = 'C'
-                GROUP BY
-                    BP.ProductCode,
-                    BP.ProductName
-            ),
-            FailedChassis AS (
-                SELECT
-                    BP.ProductCode AS BikeCode,
-                    BP.ProductName AS BikeName,
-                    COUNT(DISTINCT DWC.ChassisNo) AS TotalFailedChassis
-                FROM DealarWarrantyClaim DWC
-                INNER JOIN DealarWarrantyClaimProduct DWCP
-                    ON DWC.DCWarrantyId = DWCP.DCWarrantyId
-                INNER JOIN DealarInvoiceDetails DID
-                    ON DWC.ChassisNo = DID.ChassisNo
-                INNER JOIN Product BP
-                    ON DID.ProductCode = BP.ProductCode
-                WHERE DWC.Status = 1
-                GROUP BY
-                    BP.ProductCode,
-                    BP.ProductName
-            )
-            SELECT TOP (@limit)
-                BS.BikeCode,
-                BS.BikeName,
-                BS.TotalBikeSold,
-                ISNULL(FC.TotalFailedChassis, 0) AS TotalFailedChassis,
-                (
-                    CAST(ISNULL(FC.TotalFailedChassis, 0) AS FLOAT)
-                    / NULLIF(BS.TotalBikeSold, 0)
-                ) AS PartsFailureRatio
-            FROM BikeSold BS
-            LEFT JOIN FailedChassis FC
-                ON BS.BikeCode = FC.BikeCode
-            WHERE (
-                CAST(ISNULL(FC.TotalFailedChassis, 0) AS FLOAT)
-                / NULLIF(BS.TotalBikeSold, 0)
-            ) != 0
-            ORDER BY PartsFailureRatio DESC;
-        """
+        sql, mapping_params = bike_model_failure_ratio_sql(load_bike_model_mapping())
 
         max_retries = 3
         retries = 0
@@ -740,7 +552,7 @@ class DBManager:
         while retries < max_retries:
             try:
                 cursor = self.connection.cursor()
-                cursor.execute(sql, (limit_int,))
+                cursor.execute(sql, (limit_int, *mapping_params))
                 rows = cursor.fetchall()
                 cursor.close()
                 cursor = None
