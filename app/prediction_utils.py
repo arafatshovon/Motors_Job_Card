@@ -11,7 +11,7 @@ import pickle
 import numpy as np
 import pandas as pd
 from itertools import product
-from catboost import CatBoostRegressor
+from app.bike_model_mapping import load_bike_model_mapping
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -24,53 +24,21 @@ METADATA_PATH = os.path.join(CLUSTER_DATA_DIR, 'model_metadata.pkl')
 WARRANTY_DATA_PATH = os.path.join(CLUSTER_DATA_DIR, 'warranty_data.csv')
 ENHANCED_DATA_PATH = os.path.join(CLUSTER_DATA_DIR, 'df_monthly_enhanced_filled.csv')
 
-# Bike model mapping
-BIKE_MODEL_MAPPING = {
-    "Aerox155": ["Aerox155 Grey Vermillion PGD", "Aerox155 Metallic Black SMX", "Aerox155 Racing Blue DPBMY", "Aerox155 Silver WMC"],
-    "Alpha": ["Alpha Marble Black"],
-    "FAZER FI V 2.0": ["FAZER FI V 2.0 Marble White 2WS300BWC1", "FAZER FI V 2.0 Ravine Black 2WS200SMX"],
-    "FZ V3": ["FZ V3 Metric Black SMX", "FZ V3 Racing Blue DPBMY"],
-    "FZ-X": ["FZ-X (BYJ1) Dark Matt Blue MFG", "FZ-X (BYJ1) Matt Black MFG", "FZ-X (BYJ1) Matt Copper MFG", "FZ-X (BYJ1) Matt Titan MFG", "FZ-X (Matt Copper)", "FZ-X (Metallic Blue)", "FZ-X Matt Black MBL2", "FZ-X Matt Copper MDOM3", "FZ-X Metallic Blue BMC"],
-    "FZ25": ["FZ25 (250CC)"],
-    "FZN 250": ["FZN 250 (DF81) Black", "FZN 250 (DF81) Racing Blue", "FZN 250 (DF81) White"],
-    "FZS DD": ["FZS DD Armada Blue CKD", "FZS DD Armada Blue MFG", "FZS DD Black Metallic MFG", "FZS DD Dark knight MFG", "FZS DD Dark Night CKD", "FZS DD Grey Metallic MFG", "FZS DD Matt Green CKD", "FZS DD Matt Grey Metallic MFG"],
-    "FZS FI V 2.0": ["FZS FI V 2.0 (SE) Matt Green 2GS300MBL2", "FZS FI V 2.0 (SE) Matt Green 2GS700MBL2", "FZS FI V 2.0 Hurricane Grey 2GS600MNM3", "FZS FI V 2.0 Knight Red 2GS600MDRM4", "FZS FI V 2.0 Lighting Cyan 2GS600CM6", "FZS FI V 2.0 Opal White 2GS600BWC1", "FZS FI V 2.0 Viper Black 2GS400SMX"],
-    "FZS V-2.0 DD": ["FZS V-2.0 DD Armada Blue MDPBM1"],
-    "FZS V2": ["Fzs DD V2.0 Dark Knight", "Fzs DD V2.0 Matt Green", "FZS v2-Dark Night 2GS900010A MBL2"],
-    "FZS V3": ["FZS V3 (BDY5) Dark Matt Blue", "FZS V3 (BDY5) Matt Red", "FZS V3 (BDY6) Majesty Red", "FZS V3 (BDY6) Metallic Black", "FZS V3 (BDY6) Metallic Grey", "FZS V3 Dark Matt Blue MDPBM1", "FZS V3 Gray & Cyan Blue MNM3", "FZS V3 Matt Black MBL2"],
-    "FZS V3.0": ["FZS V3.0 Dark Matt Blue CKD", "FZS V3.0 Dark Matt Blue MFG", "FZS V3.0 Dark Matt Blue MFG (MDPBM1)", "FZS V3.0 Grey & Cyan Blue CKD", "FZS V3.0 Matt Black CKD", "FZS V3.0 Matt Black MFG", "FZS V3.0 Matt Black MFG (MBL2)", "FZS V3.0 Matt Red MFG", "FZS V3.0 Metallic Red CKD", "FZS V3.0 Metallic Red MFG", "FZS V3.0 Vintage Green MFG", "FZS V3.0 White CKD"],
-    "FZS V4": ["FZS V4 (DE91) Dark Matt Blue", "FZS V4 (DE91) Matt Black", "FZS V4 (DE92) Ice Fluo Vermillion", "FZS V4 (DE92) Majesty Red", "FZS V4 (DE92) Matt Black", "FZS V4 (DE92) Metallic Grey", "FZS V4 (DE92) Racing Blue", "FZS V4 (DE92) Sparkle Green"],
-    "Fascino": ["Fascino Unite White"],
-    "Fazer": ["Fazer Burning Red VRC1", "Fazer Midnight Black SMX"],
-    "Fazer FZH150": ["Fazer FZH150 (DH21) Black", "Fazer FZH150 (DH21) Blue", "Fazer FZH150 (DH21) Red"],
-    "MT 15": ["MT 15 ABS India Black SMX", "MT 15 ABS India Blue MDPBM1"],
-    "MT15 V2": ["MT15 V2 Cyan Storm PGD", "MT15 V2 Ice Fluo Vermillion MLNM4", "MT15 V2 Metallic Black SMX", "MT15 V2 Racing Blue DPBMY"],
-    "N Max": ["N Max Scooter Grey MNM3"],
-    "R15 V3": ["R15 V3 Dark Knight MBL2", "R15 V3 MotoGP SMX", "R15 V3 Racing Blue DPBMY", "R15 V3 Thunder Grey MNM3"],
-    "R15 V3.0": ["R15 V3.0 Black SMX", "R15 V3.0 Blue DPBMC", "R15 V3.0 Movistar DPBMC", "R15 V3.0 Yellow YM6"],
-    "R15 V4": ["R15 V4 (BPDF00) Intensity White", "R15 V4 Dark Knight LGB", "R15 V4 Metallic Red VRC1", "R15 V4 Racing Blue DPBMY"],
-    "R15M": ["R15M (BPDD00) Metallic Grey", "R15M (Metallic Grey BPDD00)", "R15M (Metallic Grey)", "R15M Metallic Grey WMC"],
-    "Ray ZR": ["Ray ZR SR 125 FI Blue DPBMY", "Ray ZR SR 125 FI Green NHG", "Ray ZR SR Blue DPBMY", "Ray ZR Street Rally (Red) B2V1000-010A M"],
-    "RayZR Street Rally": ["RayZR Street Rally-DPBMY(Blue)", "RayZR Street Rally-MNM3(Red/Gray)"],
-    "SALUTO Disc": ["SALUTO (Disc) Glory Green 2LP800YB", "SALUTO (Disc) Matt Green 2LPB00MBL2", "SALUTO (Disc) Smoky Black 2LP800MNM3", "SALUTO (Disc) Sparky Cyan 2LP800CM6", "Saluto Disc AB MFG", "Saluto Disc MG CKD", "Saluto Disc MG MFG", "Saluto Disc SC CKD", "Saluto Disc SC MFG"],
-    "SALUTO Drum": ["SALUTO (Drum) Victory Red 2LP400DRMK", "SALUTO (Drum) Victory Red 2LP500DRMK"],
-    "SZRR": ["SZRR (SE) Matt Green 2PY500MBL2", "SZRR Beast Black 2PY400SMX", "SZRR Predator Cyan 2PY400CM6"],
-    "Saluto": ["Saluto UBS Armada Blue MFG", "Saluto UBS Dark Purplish Blue MFG", "Saluto UBS Matt Black MFG", "Saluto UBS Pastel Dark Grey MFG", "Saluto UBS Sparkle Green MFG"],
-    "XSR155": ["XSR155 (Matt Black)", "XSR155 (Matt Green Metallic)", "XSR155 (Radical White)", "XSR155 (White Metallic)"]
+# Use the same authoritative mapping as the warranty reports and dashboard.
+BIKE_MODEL_MAPPING = load_bike_model_mapping()
+BIKE_VARIANT_TO_MODEL = {
+    " ".join(variant.split()).casefold(): model
+    for model, variants in BIKE_MODEL_MAPPING.items()
+    for variant in variants
 }
 
-# Create reverse mapping
-BIKE_VARIANT_TO_MODEL = {}
-for base_model, variants in BIKE_MODEL_MAPPING.items():
-    for variant in variants:
-        BIKE_VARIANT_TO_MODEL[variant] = base_model
 
-
-def get_bike_model(bike_name: str) -> str:
-    """Map bike variant name to base model."""
+def get_bike_model(bike_name: str):
+    """Resolve a detailed variant to Motors' mapped name; unmapped names stay absent."""
     if pd.isna(bike_name):
-        return 'Unknown'
-    return BIKE_VARIANT_TO_MODEL.get(bike_name, 'Other')
+        return None
+    normalized = " ".join(str(bike_name).split()).casefold()
+    return BIKE_VARIANT_TO_MODEL.get(normalized)
 
 
 def preprocess_warranty_data(
@@ -123,11 +91,14 @@ def preprocess_warranty_data(
     if 'InvoiceDetails' in warranty_data_full.columns and 'InvoiceDate' not in warranty_data_full.columns:
         warranty_data_full = warranty_data_full.rename(columns={'InvoiceDetails': 'InvoiceDate'})
 
-    # Add the model group from the sold bike variant when only its name is available.
-    if 'BikeName' in warranty_data_full.columns:
-        warranty_data_full['BikeModel'] = warranty_data_full['BikeName'].apply(get_bike_model)
-    elif 'BikeModel' not in warranty_data_full.columns:
-        raise ValueError("Warranty data must include BikeName or BikeModel")
+    # Rebuild group membership from detailed names, even if an old BikeModel is
+    # present. Old aggregated groups cannot be reliably split into the new groups.
+    if 'BikeName' not in warranty_data_full.columns:
+        raise ValueError("Warranty data must include detailed BikeName values for Motors model mapping")
+    warranty_data_full['BikeModel'] = warranty_data_full['BikeName'].apply(get_bike_model)
+    warranty_data_full = warranty_data_full.dropna(subset=['BikeModel'])
+    if warranty_data_full.empty:
+        raise ValueError("No warranty rows match the Motors bike model mapping")
 
     # Create enhanced dataset
     warranty_enhanced = warranty_data_full.copy()
@@ -311,6 +282,8 @@ def load_model_and_metadata():
     if not os.path.exists(METADATA_PATH):
         raise FileNotFoundError(f"Metadata not found at {METADATA_PATH}")
 
+    from catboost import CatBoostRegressor
+
     model = CatBoostRegressor()
     model.load_model(MODEL_PATH)
 
@@ -472,12 +445,11 @@ def get_predictions_for_next_months(n_months: int = 6, top_n_bike_models: int = 
     feature_columns = metadata['feature_columns']
     cat_features = metadata['categorical_features']
 
-    # Load enhanced data
-    if not os.path.exists(ENHANCED_DATA_PATH):
-        df_enhanced = preprocess_warranty_data()
-    else:
-        df_enhanced = pd.read_csv(ENHANCED_DATA_PATH)
-        df_enhanced['date'] = pd.to_datetime(df_enhanced['date'])
+    # Rebuild from raw variant names. The legacy enhanced CSV contains old
+    # aggregated names and must not be used as a mapping source.
+    df_enhanced = preprocess_warranty_data()
+    if df_enhanced.empty:
+        raise ValueError("No mapped warranty history is available for prediction")
 
     # Get top bike models and parts
     top_bike_models = (
@@ -581,18 +553,12 @@ def get_detailed_predictions(
     feature_columns = metadata['feature_columns']
     cat_features = metadata['categorical_features']
 
-    # Prefer fresh DB rows when supplied by the API. The CSV remains a fallback for
-    # callers outside the live API path.
-    if source_df is not None:
-        df_enhanced = preprocess_warranty_data(
-            source_df=source_df,
-            end_exclusive=forecast_start,
-        )
-    elif not os.path.exists(ENHANCED_DATA_PATH):
-        df_enhanced = preprocess_warranty_data()
-    else:
-        df_enhanced = pd.read_csv(ENHANCED_DATA_PATH)
-        df_enhanced['date'] = pd.to_datetime(df_enhanced['date'])
+    # Both live rows and the CSV fallback must be mapped from raw BikeName.
+    # Never reuse the old enhanced CSV: merged old groups cannot be split again.
+    df_enhanced = preprocess_warranty_data(
+        source_df=source_df,
+        end_exclusive=forecast_start,
+    )
 
     if forecast_start is not None:
         forecast_start = pd.Timestamp(forecast_start).to_period('M').to_timestamp()

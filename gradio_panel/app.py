@@ -621,12 +621,15 @@ def create_predicted_parts_bar_chart(df: pd.DataFrame, top_n: int = 10):
     return fig
 
 
-def create_bike_model_pie_chart(df: pd.DataFrame, top_n: int = 8):
+def create_bike_model_pie_chart(df: pd.DataFrame, top_n: int = None):
     if df is None or df.empty:
         return create_empty_figure("No bike model distribution available", height=420)
 
+    work_df = df.copy()
+    work_df["BikeModel"] = work_df["BikeModel"].map(normalize_bike_name).map(BIKE_MODEL_GROUP_LOOKUP)
+    work_df = work_df.dropna(subset=["BikeModel"])
     agg = (
-        df.groupby("BikeModel", as_index=False)["PredictedClaimCount"]
+        work_df.groupby("BikeModel", as_index=False)["PredictedClaimCount"]
         .sum()
         .sort_values("PredictedClaimCount", ascending=False)
     )
@@ -634,18 +637,28 @@ def create_bike_model_pie_chart(df: pd.DataFrame, top_n: int = 8):
     if agg.empty:
         return create_empty_figure("No bike model distribution available", height=420)
 
-    top = agg.head(top_n).copy()
-    rest = agg.iloc[top_n:]
+    # Show all Motors model groups by default, using only the supplied names.
+    top = agg.copy() if top_n is None else agg.head(top_n).copy()
+    rest = agg.iloc[len(top):]
     if not rest.empty:
         top = pd.concat(
             [
                 top,
                 pd.DataFrame(
-                    [{"BikeModel": "Other", "PredictedClaimCount": rest["PredictedClaimCount"].sum()}]
+                    [{"BikeModel": "Other mapped models", "PredictedClaimCount": rest["PredictedClaimCount"].sum()}]
                 ),
             ],
             ignore_index=True,
         )
+
+    # Label substantial slices inside the pie; small slices retain hover details.
+    total = top["PredictedClaimCount"].sum()
+    min_label_share = 0.05
+    slice_text = [
+        f"{model}<br>{count / total:.1%}"
+        if total > 0 and count / total >= min_label_share else ""
+        for model, count in zip(top["BikeModel"], top["PredictedClaimCount"])
+    ]
 
     fig = go.Figure(
         data=[
@@ -653,7 +666,15 @@ def create_bike_model_pie_chart(df: pd.DataFrame, top_n: int = 8):
                 labels=top["BikeModel"],
                 values=top["PredictedClaimCount"],
                 hole=0.2,
-                textinfo="percent+label",
+                text=slice_text,
+                textinfo="text",
+                textposition="inside",
+                hovertemplate=(
+                    "<b>%{label}</b><br>"
+                    "Predicted Claim Count: %{value:,.2f}<br>"
+                    "Share: %{percent:.2%}<extra></extra>"
+                ),
+                showlegend=True,
             )
         ]
     )
@@ -668,8 +689,16 @@ def create_bike_model_pie_chart(df: pd.DataFrame, top_n: int = 8):
         plot_bgcolor="#ffffff",
         font=dict(color="#1e293b", family="Outfit, sans-serif"),
         height=420,
-        margin=dict(l=20, r=20, t=60, b=40),
+        margin=dict(l=20, r=20, t=60, b=20),
         showlegend=True,
+        legend=dict(
+            orientation="v",
+            x=1.02,
+            xanchor="left",
+            y=1,
+            yanchor="top",
+            font=dict(size=11),
+        ),
     )
     return fig
 
